@@ -38,7 +38,7 @@
 | MVP-013 | Testes do roteador | F2 | P0 | 012 | ✅ Concluída |
 | MVP-014 | Schema SQLite + WAL + índices | F2 | P0 | 009 | ✅ Concluída |
 | MVP-015 | Criação de chamado com idempotência | F2 | P0 | 014 | ✅ Concluída |
-| MVP-016 | Consulta e atualização de chamados | F2 | P0 | 015 | Pendente |
+| MVP-016 | Consulta e atualização de chamados | F2 | P0 | 015 | ✅ Concluída |
 | MVP-017 | Máquina de estados (`estado_log`) | F2 | P0 | 015 | Pendente |
 | MVP-018 | Testes de persistência e idempotência | F2 | P0 | 015–017 | Pendente |
 | MVP-019 | Portar datasets de triagem | F3 | P0 | 002 | Pendente |
@@ -365,8 +365,8 @@
 
 ### MVP-016 — Consulta e atualização de chamados
 - **Descrição:** Funções de leitura e mutação usadas pela API.
-- **Prioridade:** P0 · **Depende de:** 015 · **Status:** Pendente
-- **Arquivos:** `backend/app/db.py`
+- **Prioridade:** P0 · **Depende de:** 015 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/db.py`, `backend/tests/test_db.py`
 - **Critérios de aceitação:**
   - `listar_chamados(tipo=None, status=None, gravidade=None)` — 200 mais recentes, ordem decrescente
   - `obter_chamado(chamado_id)` → `dict | None`
@@ -374,10 +374,19 @@
   - `ack_chamado(chamado_id)` grava `acked_at` e muda status para `reconhecido`
 - **Como validar:** `uv run pytest tests/test_db.py`
 
+> **Notas de implementação.**
+>
+> - `atualizar_chamado()` grava a transição em `estado_log` **na mesma transação** da
+>   atualização, antecipando parte da MVP-017. Separar as duas coisas criaria uma janela
+>   em que o status muda sem deixar rastro — e é justamente o rastro que sustenta a
+>   auditoria. Reescrever o mesmo status não gera linha: o log registra transições.
+> - `ack_chamado()` preserva o `acked_at` original num segundo ACK. É desse horário que
+>   sai a métrica de tempo até o reconhecimento; sobrescrever mascararia uma demora real.
+
 ### MVP-017 — Máquina de estados (`estado_log`)
 - **Descrição:** Toda transição de status é registrada append-only.
-- **Prioridade:** P0 · **Depende de:** 015 · **Status:** Pendente
-- **Arquivos:** `backend/app/db.py`
+- **Prioridade:** P0 · **Depende de:** 015 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/db.py`, `backend/tests/test_db.py`
 - **Critérios de aceitação:**
   - Toda mudança de `status` grava uma linha com `de`, `para`, `created_at`
   - `listar_estados(chamado_id)` devolve em ordem cronológica

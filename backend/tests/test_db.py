@@ -228,3 +228,156 @@ def test_timestamps_sao_preenchidos(banco, roteamento):
 def test_timestamp_local_do_tablet_e_preservado(banco, roteamento):
     c = db.criar_chamado(evento(timestamp_local="2026-09-16T10:00:00-03:00"), roteamento)
     assert c["timestamp_local"] == "2026-09-16T10:00:00-03:00"
+
+
+# ===========================================================================
+# Consulta e atualização (MVP-016)
+# ===========================================================================
+
+
+@pytest.fixture
+def tres_chamados(banco):
+    """Um de cada trilha, criados nesta ordem."""
+    criados = {}
+    for tipo in (TipoOcorrencia.seguranca, TipoOcorrencia.mulher, TipoOcorrencia.ouvidoria):
+        criados[tipo.value] = db.criar_chamado(
+            evento(tipo_ocorrencia=tipo), rotear(tipo)
+        )
+    return criados
+
+
+# --- obter ------------------------------------------------------------------
+
+
+def test_obter_chamado(tres_chamados):
+    alvo = tres_chamados["mulher"]
+    assert db.obter_chamado(alvo["chamado_id"])["chamado_id"] == alvo["chamado_id"]
+
+
+def test_obter_chamado_inexistente(banco):
+    assert db.obter_chamado("CALL-2026-999999") is None
+
+
+# --- listar -----------------------------------------------------------------
+
+
+def test_lista_mais_recentes_primeiro(tres_chamados):
+    ids = [c["chamado_id"] for c in db.listar_chamados()]
+    assert ids == sorted(ids, reverse=True)
+
+
+def test_lista_vazia_quando_nao_ha_chamados(banco):
+    assert db.listar_chamados() == []
+
+
+@pytest.mark.parametrize(
+    "filtro,valor,esperado",
+    [
+        ("tipo", "mulher", 1),
+        ("tipo", "seguranca", 1),
+        ("tipo", "saude", 0),
+        ("status", "roteado", 3),
+        ("status", "encerrado", 0),
+        ("gravidade", "risco_imediato", 1),
+        ("gravidade", "orientacao", 1),
+    ],
+)
+def test_filtros_da_listagem(tres_chamados, filtro, valor, esperado):
+    assert len(db.listar_chamados(**{filtro: valor})) == esperado
+
+
+def test_filtros_combinam(tres_chamados):
+    assert len(db.listar_chamados(tipo="seguranca", status="roteado")) == 1
+    assert len(db.listar_chamados(tipo="seguranca", status="encerrado")) == 0
+
+
+def test_listagem_respeita_o_limite(banco):
+    for _ in range(5):
+        db.criar_chamado(evento(), rotear(TipoOcorrencia.seguranca))
+    assert len(db.listar_chamados(limite=2)) == 2
+
+
+# --- atualizar --------------------------------------------------------------
+
+
+def test_atualiza_status(tres_chamados):
+    alvo = tres_chamados["seguranca"]
+    atualizado = db.atualizar_chamado(alvo["chamado_id"], status=StatusChamado.notificado)
+    assert atualizado["status"] == "notificado"
+
+
+def test_atualizar_mexe_no_updated_at(tres_chamados):
+    alvo = tres_chamados["seguranca"]
+    atualizado = db.atualizar_chamado(alvo["chamado_id"], status=StatusChamado.notificado)
+    assert atualizado["updated_at"] >= alvo["updated_at"]
+
+
+def test_atualiza_observacao_sem_mexer_no_status(tres_chamados):
+    alvo = tres_chamados["seguranca"]
+    atualizado = db.atualizar_chamado(alvo["chamado_id"], observacao="sem resposta do CSV")
+    assert atualizado["observacao"] == "sem resposta do CSV"
+    assert atualizado["status"] == alvo["status"]
+
+
+def test_atualizar_chamado_inexistente_devolve_none(banco):
+    assert db.atualizar_chamado("CALL-2026-999999", status="encerrado") is None
+
+
+def test_toda_troca_de_status_deixa_rastro(tres_chamados):
+    """Não existe mudar o estado sem registrar a transição."""
+    alvo = tres_chamados["seguranca"]
+    db.atualizar_chamado(alvo["chamado_id"], status=StatusChamado.notificado)
+    db.atualizar_chamado(alvo["chamado_id"], status=StatusChamado.em_atendimento)
+    db.atualizar_chamado(alvo["chamado_id"], status=StatusChamado.encerrado)
+
+    with db.conectar() as con:
+        trilha = [
+            (r["de"], r["para"])
+            for r in con.execute(
+                "SELECT de, para FROM estado_log WHERE chamado_id = ? ORDER BY id",
+                (alvo["chamado_id"],),
+            )
+        ]
+    assert trilha == [
+        (None, "roteado"),
+        ("roteado", "notificado"),
+        ("notificado", "em_atendimento"),
+        ("em_atendimento", "encerrado"),
+    ]
+
+
+def test_reescrever_o_mesmo_status_nao_gera_linha(tres_chamados):
+    """O log registra transições, não toques."""
+    alvo = tres_chamados["seguranca"]
+    db.atualizar_chamado(alvo["chamado_id"], status=StatusChamado.roteado)
+
+    with db.conectar() as con:
+        n = con.execute(
+            "SELECT count(*) FROM estado_log WHERE chamado_id = ?",
+            (alvo["chamado_id"],),
+        ).fetchone()[0]
+    assert n == 1
+
+
+# --- ack --------------------------------------------------------------------
+
+
+def test_ack_marca_reconhecido_e_carimba_o_horario(tres_chamados):
+    alvo = tres_chamados["seguranca"]
+    ack = db.ack_chamado(alvo["chamado_id"])
+    assert ack["status"] == "reconhecido"
+    assert ack["acked_at"] is not None
+
+
+def test_segundo_ack_nao_reescreve_o_horario_original(tres_chamados):
+    """`acked_at` alimenta a métrica de tempo até o reconhecimento.
+    Sobrescrever mascararia uma demora real."""
+    alvo = tres_chamados["seguranca"]
+    primeiro = db.ack_chamado(alvo["chamado_id"])
+    db.atualizar_chamado(alvo["chamado_id"], status=StatusChamado.em_atendimento)
+    segundo = db.ack_chamado(alvo["chamado_id"])
+    assert segundo["acked_at"] == primeiro["acked_at"]
+
+
+def test_ack_em_chamado_inexistente_devolve_none(banco):
+    assert db.ack_chamado("CALL-2026-999999") is None

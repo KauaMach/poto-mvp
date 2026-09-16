@@ -223,3 +223,121 @@ def criar_chamado(
     criado = buscar_por_evento(evento_id)
     assert criado is not None  # acabou de ser inserido
     return {**criado, "_duplicado": False}
+
+
+def obter_chamado(chamado_id: str) -> dict | None:
+    with conectar() as con:
+        linha = con.execute(
+            "SELECT * FROM chamados WHERE chamado_id = ?", (chamado_id,)
+        ).fetchone()
+    return _dict(linha)
+
+
+# Teto de uma listagem do painel. O volume real de um totem é de dezenas de
+# registros por dia; 200 cobre semanas de operação sem paginação.
+LIMITE_LISTAGEM = 200
+
+
+def listar_chamados(
+    tipo: str | None = None,
+    status: str | None = None,
+    gravidade: str | None = None,
+    *,
+    limite: int = LIMITE_LISTAGEM,
+) -> list[dict]:
+    """Lista para o painel, mais recentes primeiro, com filtros combináveis.
+
+    Ordena por `id` e não por `created_at`: é a chave primária, já indexada, e
+    monotônica com a criação. Priorizar críticos no topo é decisão de
+    apresentação e fica no painel, não aqui.
+    """
+    clausulas, valores = [], []
+    for coluna, valor in (
+        ("tipo_ocorrencia", tipo),
+        ("status", status),
+        ("gravidade", gravidade),
+    ):
+        if valor:
+            clausulas.append(f"{coluna} = ?")
+            valores.append(str(valor))
+
+    onde = f"WHERE {' AND '.join(clausulas)}" if clausulas else ""
+    with conectar() as con:
+        linhas = con.execute(
+            f"SELECT * FROM chamados {onde} ORDER BY id DESC LIMIT ?",
+            (*valores, limite),
+        ).fetchall()
+    return [dict(x) for x in linhas]
+
+
+def atualizar_chamado(
+    chamado_id: str,
+    *,
+    status: str | None = None,
+    observacao: str | None = None,
+) -> dict | None:
+    """Atualiza estado e/ou observação. Devolve `None` se o chamado não existe.
+
+    Toda troca de status vira uma linha em `estado_log`, na mesma transação da
+    atualização — não existe mudar o estado sem deixar rastro. Reescrever o
+    mesmo status não gera linha: o log registra transições, não toques.
+    """
+    with conectar() as con:
+        atual = con.execute(
+            "SELECT * FROM chamados WHERE chamado_id = ?", (chamado_id,)
+        ).fetchone()
+        if atual is None:
+            return None
+
+        campos, valores = [], []
+        agora = agora_iso()
+
+        if status is not None and str(status) != atual["status"]:
+            campos.append("status = ?")
+            valores.append(str(status))
+            con.execute(
+                "INSERT INTO estado_log (chamado_id, de, para, created_at) VALUES (?,?,?,?)",
+                (chamado_id, atual["status"], str(status), agora),
+            )
+        if observacao is not None:
+            campos.append("observacao = ?")
+            valores.append(observacao)
+
+        if campos:
+            campos.append("updated_at = ?")
+            valores.append(agora)
+            con.execute(
+                f"UPDATE chamados SET {', '.join(campos)} WHERE chamado_id = ?",
+                (*valores, chamado_id),
+            )
+
+        linha = con.execute(
+            "SELECT * FROM chamados WHERE chamado_id = ?", (chamado_id,)
+        ).fetchone()
+    return _dict(linha)
+
+
+def ack_chamado(chamado_id: str) -> dict | None:
+    """Operador reconhece o chamado: para o relógio do SLA.
+
+    `acked_at` é gravado só na primeira vez. Um segundo ACK não reescreve o
+    horário original — é dele que sai a métrica de tempo até o reconhecimento,
+    e sobrescrever mascararia uma demora real.
+    """
+    with conectar() as con:
+        atual = con.execute(
+            "SELECT * FROM chamados WHERE chamado_id = ?", (chamado_id,)
+        ).fetchone()
+        if atual is None:
+            return None
+        primeiro_ack = atual["acked_at"] is None
+
+    chamado = atualizar_chamado(chamado_id, status=StatusChamado.reconhecido)
+    if primeiro_ack:
+        with conectar() as con:
+            con.execute(
+                "UPDATE chamados SET acked_at = ? WHERE chamado_id = ?",
+                (agora_iso(), chamado_id),
+            )
+        chamado = obter_chamado(chamado_id)
+    return chamado
