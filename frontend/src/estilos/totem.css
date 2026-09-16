@@ -60,3 +60,21 @@
   flex: 0 0 auto;
   width: 100%;
 }
+
+/* Título das telas do totem — MVP-050.
+ *
+ * `clamp(28px, 4.5vw, 44px)` de PLAN.md §6. Michroma só tem peso 400, então a
+ * hierarquia vem de tamanho, tracking e caixa — nunca de `font-weight`.
+ */
+.poto-titulo {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(28px, 4.5vw, 44px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  text-align: center;
+  color: var(--ink);
+  /* Sem isto "Como podemos ajudar?" quebra em três linhas no tablet em
+   * retrato e empurra a grade para baixo do rodapé. */
+  max-width: 20ch;
+}

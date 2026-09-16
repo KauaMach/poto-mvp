@@ -72,7 +72,7 @@
 | MVP-047 | Componente `<Confirm>` | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-048 | Cliente de API tipado | F6 | P0 | 010, 030 | ✅ Concluída |
 | MVP-049 | Shell do totem (header/main/footer) | F6 | P0 | 044 | ✅ Concluída |
-| MVP-050 | Tela inicial com as 4 trilhas | F6 | P0 | 045, 046, 049 | Pendente |
+| MVP-050 | Tela inicial com as 4 trilhas | F6 | P0 | 045, 046, 049 | ✅ Concluída |
 | MVP-051 | Fluxo de acionamento e confirmação | F6 | P0 | 047, 048, 050 | Pendente |
 | MVP-052 | Retorno automático à tela inicial | F6 | P0 | 051 | Pendente |
 | MVP-053 | Modo discreto | F6 | P0 | 051 | Pendente |
@@ -1640,15 +1640,38 @@
 
 ### MVP-050 — Tela inicial com as 4 trilhas
 - **Descrição:** "Como podemos ajudar?" com a grade 2×2 e o pânico no rodapé.
-- **Prioridade:** P0 · **Depende de:** 045, 046, 049 · **Status:** Pendente
-- **Arquivos:** `frontend/src/totem/telas/Home.tsx`
+- **Prioridade:** P0 · **Depende de:** 045, 046, 049 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/totem/telas/Home.tsx`, `frontend/src/totem/trilhas.ts`,
+  `frontend/src/totem/Totem.tsx`, `frontend/src/App.tsx`, `frontend/src/estilos/totem.css`
 - **Critérios de aceitação:**
   - Título em Michroma `clamp(28px, 4.5vw, 44px)`
   - Trilhas na ordem: Emergência médica · Segurança · Assédio/Sala Lilás · Outros
   - "Outros" com variante `muted`; "Assédio/Sala Lilás" dispara `modo: discreto`
   - Grade `1fr 1fr`, `gap: 16px`; 1 coluna abaixo de 560px
   - **Todo o fluxo principal em ≤ 2 toques**
-- **Como validar:** abrir e conferir contra `Tela-Totem.png`
+- **Como validar:** abrir e conferir contra `Tela-Totem.png` — ordem, cores e título
+  verificados por renderização: `Emergência médica · Segurança · Assédio / Sala Lilás ·
+  Outros`, com `info` em `--muted` e as outras três em ferrugem
+
+> **Dois toques, e o segundo já é a confirmação.** Não há tela intermediária de
+> detalhamento, não há "tem certeza?", não há formulário. O `texto_livre` existe no
+> contrato do backend e é opcional de propósito — quem está em emergência não digita.
+>
+> A tabela de trilhas ficou em `trilhas.ts` e não espalhada no JSX: a **ordem é a ordem da
+> tela** e precisa de um lugar só. Ela não é arbitrária — médica e segurança primeiro
+> porque são as mais frequentes e as de maior gravidade; "Outros" por último porque é o
+> destino de quem não se encaixa nas três.
+>
+> **O `modo: "discreto"` enviado daqui é intenção, não decisão.** O roteador força discreto
+> na trilha `mulher` de qualquer jeito (MVP-012, e a MVP-030 grava o modo *decidido*).
+> Mandá-lo do cliente só evita que o primeiro quadro da confirmação apareça no modo errado
+> enquanto a resposta não chegou — a garantia continua sendo do backend.
+>
+> `max-width: 20ch` no título: sem isso "Como podemos ajudar?" quebra em três linhas no
+> tablet em retrato e empurra a grade para baixo do rodapé.
+>
+> O pânico não é uma quinta trilha. Ele fica no rodapé e é o único elemento em ferrugem
+> cheia da tela (regra 60/30/10) porque é o caminho de quem **não consegue nem escolher**.
 
 ### MVP-051 — Fluxo de acionamento e confirmação
 - **Descrição:** Toque → POST → tela de confirmação com protocolo.

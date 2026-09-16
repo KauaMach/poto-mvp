@@ -5,11 +5,14 @@
  *   /        → totem   (tela do Galaxy Tab A11)
  *   /painel  → central (notebook/desktop)
  *
+ * Mais `/galeria`, que só existe em desenvolvimento (MVP-047).
+ *
  * Roteamento manual, sem react-router: são duas rotas estáticas e o kiosk
  * nunca navega entre elas. Uma dependência a mais não se pagaria aqui.
  */
 
 import { lazy, Suspense } from "react";
+import { Totem } from "./totem/Totem";
 
 /* Import dinâmico e guardado por `import.meta.env.DEV`, que é uma constante
  * estática: no build de produção a condição é `false`, o ramo é eliminado e o
@@ -43,20 +46,11 @@ export function App() {
       </Suspense>
     );
   }
-  return <TotemPlaceholder />;
+  return <Totem />;
 }
 
-// --- Placeholders -----------------------------------------------------------
-// Substituídos pelas telas reais nas tasks MVP-049/050 (totem) e MVP-060 (painel).
-
-function TotemPlaceholder() {
-  return (
-    <main>
-      <h1>P.O.T.O — Totem</h1>
-      <p>Scaffold ativo. A tela inicial chega na MVP-050.</p>
-    </main>
-  );
-}
+// --- Placeholder ------------------------------------------------------------
+// Substituído pela tela real na MVP-060.
 
 function PainelPlaceholder() {
   return (
