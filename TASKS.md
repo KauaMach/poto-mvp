@@ -553,8 +553,8 @@
 
 ### MVP-023 — Merge protetivo ★
 - **Descrição:** A função que combina a trilha escolhida pela pessoa com a triagem do texto. **É a task mais importante do MVP.**
-- **Prioridade:** P0 · **Depende de:** 012, 020, 022 · **Status:** Pendente
-- **Arquivos:** `backend/app/triagem/merge.py`
+- **Prioridade:** P0 · **Depende de:** 012, 020, 022 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/triagem/merge.py`, `backend/tests/test_merge.py`
 - **Critérios de aceitação:**
   - `merge_acionamento(routing, triagem) -> dict`
   - `gravidade_final = max()` na ordem `orientacao(1) < risco_potencial(2) < risco_imediato(3)`
@@ -563,7 +563,29 @@
   - Sinal crítico no texto **promove** a gravidade
   - Canal final é recalculado coerente com o tipo final
   - Função pura, sem I/O — testável isoladamente
-- **Como validar:** `uv run pytest tests/test_merge.py -v`
+- **Como validar:** `uv run pytest tests/test_merge.py -v` — 137 casos
+
+> **O defeito central está fechado.** Reproduzido lado a lado com o de 15/09:
+>
+> | Texto na trilha Segurança | Referência | Agora |
+> |---|---|---|
+> | *(só o toque)* | risco_imediato | risco_imediato · csv |
+> | "socorro" | **orientacao · retido** | **risco_imediato · csv** |
+> | "preciso de ajuda" | **orientacao · retido** | **risco_imediato · csv** |
+> | "um homem está me seguindo" | **risco_potencial · retido** | **risco_imediato · csv** |
+> | "estou desmaiando" | — | risco_imediato · **samu_192** |
+>
+> **Decisão mais restritiva que o critério, de propósito.** O critério sugeria que o
+> texto vence no tipo, exceto quando sugere `ouvidoria`. Implementei que o texto só
+> redireciona o tipo **quando traz sinal crítico**. A leitura literal criaria
+> combinações que nenhuma fonte produziria sozinha: Segurança (risco imediato) +
+> *"preciso de um atestado"* viraria saúde herdando risco imediato, e o sistema
+> **chamaria o SAMU para um pedido de atestado**. Superproteger é aceitável; inventar
+> uma emergência que ninguém relatou, não.
+>
+> Acrescentado ao `Roteamento`: os campos `tipo` e `modo`, com o que o roteador de fato
+> decidiu (a trilha mulher força discreto). O merge precisa deles para recalcular o
+> canal sem reconstruir o contexto.
 
 ### MVP-024 — Fachada `triar()`
 - **Descrição:** Porta única da triagem. O resto do sistema nunca sabe qual motor rodou.

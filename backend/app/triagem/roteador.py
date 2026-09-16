@@ -19,6 +19,12 @@ from ..models import Gravidade, InstrucaoTotem, Modo, TipoOcorrencia
 
 
 class Roteamento(TypedDict):
+    # `tipo` e `modo` são o que o roteador de fato decidiu, não o que foi
+    # pedido: a trilha `mulher` força `discreto` mesmo se o cliente mandar
+    # `normal`. O merge protetivo (MVP-023) precisa deles para recalcular o
+    # canal sem reconstruir o contexto.
+    tipo: TipoOcorrencia
+    modo: Modo
     canal_roteado: str
     fallback: str
     gravidade: Gravidade
@@ -98,6 +104,8 @@ def rotear(
         mensagem = "Manifestação registrada. Use o Fala.BR para o registro formal."
 
     return Roteamento(
+        tipo=tipo,
+        modo=Modo.discreto if discreto else Modo.normal,
         canal_roteado=canal,
         fallback=fallback,
         gravidade=gravidade,
