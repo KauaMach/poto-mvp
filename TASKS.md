@@ -75,7 +75,7 @@
 | MVP-050 | Tela inicial com as 4 trilhas | F6 | P0 | 045, 046, 049 | ✅ Concluída |
 | MVP-051 | Fluxo de acionamento e confirmação | F6 | P0 | 047, 048, 050 | ✅ Concluída |
 | MVP-052 | Retorno automático à tela inicial | F6 | P0 | 051 | ✅ Concluída |
-| MVP-053 | Modo discreto | F6 | P0 | 051 | Pendente |
+| MVP-053 | Modo discreto | F6 | P0 | 051 | ✅ Concluída |
 | MVP-054 | Tela de alerta ativo (pânico) | F6 | P0 | 031, 051 | Pendente |
 | MVP-055 | Layout fluido: tablet (2 orientações) e desktop | F6 | P0 | 050, 054 | Pendente |
 | MVP-055b | Manifest e modo autônomo no tablet | F6 | P0 | 055 | Pendente |
@@ -1756,8 +1756,8 @@
 
 ### MVP-053 — Modo discreto
 - **Descrição:** A trilha mulher não pode deixar rastro na tela.
-- **Prioridade:** P0 · **Depende de:** 051 · **Status:** Pendente
-- **Arquivos:** `frontend/src/totem/telas/Confirmacao.tsx`
+- **Prioridade:** P0 · **Depende de:** 051 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/scripts/verificar-discreto.mjs`, `frontend/package.json`
 - **Critérios de aceitação — verificados na tela:**
   - Mensagem genérica "Seu pedido foi registrado. Aguarde atendimento."
   - **Sem protocolo visível**
@@ -1765,7 +1765,33 @@
   - Sem menção a "Sala Lilás", "denúncia" ou ao canal acionado
   - Retorno em 5 s
   - Decidido pelo backend via `tela_neutra`, não por condicional no cliente
-- **Como validar:** acionar a trilha e inspecionar o DOM — nenhuma dessas palavras presente
+- **Como validar:** `npm run check-discreto` — **automatizado**, 9 termos proibidos
+  varridos no HTML renderizado
+
+> **A inspeção manual virou script, e aqui isso importa mais que em qualquer outra task.**
+> Esta é a propriedade mais crítica da interface: se o agressor está a três metros, uma
+> palavra errada na tela transforma o socorro em risco. Uma inspeção manual protege o dia
+> em que foi feita; um script protege todos os dias depois.
+>
+> O que se verifica é o **HTML de verdade** — o componente é renderizado com
+> `react-dom/server` a partir de uma resposta real do backend e o resultado é varrido por
+> palavra proibida. Checar o código-fonte em vez do resultado deixaria passar a palavra
+> chegando por caminho indireto: uma mensagem vinda da API, um rótulo herdado, um
+> `aria-label`.
+>
+> Termos varridos: `Sala Lilás`, `Lilás`, `denúncia`/`denuncia`, `assédio`/`assedio`,
+> `CALL-` (o protocolo, que a variante **recebe** e não mostra), `sala_lilas`,
+> `central_180`. Verificado que pega vazamento real: fazer a variante `neutral` mostrar o
+> protocolo reprova e imprime o HTML.
+>
+> **Há também a verificação inversa**, e ela não é cerimônia: se o componente renderizasse
+> vazio, a ausência das palavras proibidas não provaria nada e o check passaria de graça. O
+> script exige que a mensagem genérica esteja presente.
+>
+> Nenhuma dependência nova: `rolldown` já vem com o Vite 8. O bundle é gerado em
+> `node_modules/.cache` e não em `/tmp` porque a resolução de módulos do Node parte da
+> localização do arquivo, não do diretório de trabalho — em `/tmp` ele não acharia
+> `react-dom`.
 
 ### MVP-054 — Tela de alerta ativo (pânico)
 - **Descrição:** Estado persistente com cronômetro e escalonamento manual.
