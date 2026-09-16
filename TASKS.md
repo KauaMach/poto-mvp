@@ -102,7 +102,7 @@
 | MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | ✅ Concluída |
 | MVP-067c | Kiosk no Galaxy Tab A11 | F9 | P0 | 055b, 067b | ✅ Concluída |
 | ~~MVP-068~~ | ~~Daemon do botão GPIO~~ | — | **P2** | — | Fora do MVP |
-| MVP-069 | `install-pi.sh` (sem Node) | F9 | P0 | 067b, 066b | ⚠️ Parcial |
+| MVP-069 | `install-pi.sh` (sem Node) | F9 | P0 | 067b, 066b | ✅ Concluída |
 | MVP-070 | Teste de resiliência (Pi + tablet) | F9 | P0 | 069, 067c | ⚠️ Parcial |
 | MVP-071 | Seed e `make demo-reset` | F10 | P0 | 066 | Pendente |
 | MVP-072 | Roteiro de demo e plano B | F10 | P0 | 070, 071 | Pendente |
@@ -2913,8 +2913,8 @@
 
 ### MVP-069 — `install-pi.sh`
 - **Descrição:** Script idempotente que transforma uma Pi limpa num totem.
-- **Prioridade:** P0 · **Depende de:** 067b · **Status:** ⚠️ Parcial — script completo e
-  verificado; **a execução numa Pi limpa não foi feita**
+- **Prioridade:** P0 · **Depende de:** 067b · **Status:** ✅ Concluída — executado 4× na
+  Pi real; **três bugs só apareceram ao rodar**
 - **Arquivos:** `deploy/install-pi.sh`
 - **Critérios de aceitação:**
   - Instala `uv`, `avahi-daemon` e `python3-picamera2` (apt) — **não instala Node**
@@ -2925,10 +2925,44 @@
   - Cria `.env` a partir do exemplo se não existir
   - **Imprime ao final as URLs** (`http://poto.local:8000` e `http://<ip>:8000`) para apontar o tablet
   - **Idempotente**: rodar duas vezes não quebra nada
-- **Como validar:** executar 2× numa Pi limpa e, do tablet, abrir a URL impressa — **não
-  executado** (Pi inalcançável deste ambiente). Verificado: `bash -n` limpo, os **13
-  critérios** conferidos por script, e a unit resultante da substituição de caminhos passa
-  pelo `systemd-analyze verify` sem nenhuma reclamação
+- **Como validar:** executar 2× numa Pi limpa e, do tablet, abrir a URL impressa —
+  **executado em 16/09 na Pi real**, 4 vezes: 2 que expuseram os bugs abaixo e 2 depois
+  das correções. Resultado final: saída 0, **15 checks verdes**, e as duas últimas
+  execuções com **conteúdo idêntico** (idempotente). Antes disso: `bash -n` limpo, os
+  **13 critérios** conferidos por script, e a unit resultante da substituição de caminhos
+  passa pelo `systemd-analyze verify` sem reclamação — nenhuma dessas verificações pegou
+  o que segue
+
+> **Rodar de verdade achou três bugs que a verificação estática não podia achar.**
+>
+> **1. O bloco de conferência do `/health` morria em toda execução.** Era um
+> `python3 -c '...'` cujas f-strings escapavam aspas com `\"`. Dentro de aspas simples o
+> bash não processa a barra, então o Python recebia a barra literal:
+>
+> ```
+> SyntaxError: unexpected character after line continuation character
+> ```
+>
+> E o `|| aviso` rebaixava a falha a um aviso — o script **saía 0** com a conferência
+> quieta e quebrada. `bash -n` valida o shell, não o Python embutido. Corrigido com
+> heredoc citado (`<<'PY'`) e o JSON entrando por variável de ambiente, o que dispensa
+> escapes por completo.
+>
+> **2. A instrução de IP estático mandava `/24` numa rede `/22`.** O prefixo estava
+> chumbado. Nesta Pi o endereço é `10.13.60.159/22` com gateway `10.13.63.250`: com
+> `/24`, a sub-rede calculada vira `10.13.60.0–255` e **o gateway cai fora dela** — o
+> estático não roteia. Quem seguisse a instrução derrubaria a rede de uma Pi headless e
+> precisaria de acesso físico para voltar. O script passa a **ler** o CIDR da interface.
+> É um bug que só aparece em rede cujo prefixo não é /24, e a UFPI é uma delas.
+>
+> **3. As duas URLs saíam desalinhadas** — o cálculo do preenchimento usava `${#NOME}`
+> contra uma linha que imprime `${NOME}.local`, 6 colunas a menos. Cosmético, mas as duas
+> URLs lado a lado são o entregável da MVP-067b. Refeito com `printf %-*s` sobre as URLs
+> já montadas.
+>
+> O texto de conferência agora também diz o que a MVP-067b mediu: o tablet precisa estar
+> na **mesma rede da Pi** para o `.local` resolver, e a URL por IP serve de qualquer
+> sub-rede que alcance.
 
 > **A unit é ajustada, não copiada.** Seus caminhos assumem `raspoto` e `~/poto-mvp`; o
 > script substitui usuário, grupo, diretório e o caminho do `uv` pelos **reais**. Um

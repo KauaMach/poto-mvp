@@ -237,9 +237,12 @@ fi
 
 # --- Plano B: IP estável ----------------------------------------------------
 #
-# O mDNS falha em dois casos reais: rede que bloqueia multicast (comum em wifi
-# corporativo/universitário) e cliente sem suporte. O IP é o plano B, e precisa
-# ser **estável** — um IP por DHCP muda quando o roteador reinicia.
+# O mDNS não atravessa roteador: 224.0.0.251 vai com TTL 1, é link-local por
+# desenho. Medido na UFPI (MVP-067b): o segmento da Pi tem mDNS funcionando, com
+# 26 vizinhos anunciando — mas de outro /22 do campus o `.local` não resolve, por
+# mais bem configurado que o avahi esteja. Some-se o cliente sem suporte a mDNS.
+# O IP é o plano B, e precisa ser **estável** — um IP por DHCP muda quando o
+# roteador reinicia.
 
 titulo "Plano B: IP estável"
 
@@ -250,6 +253,14 @@ if [[ -z "${IP}" ]]; then
 fi
 ok "IP atual: ${IP}"
 
+# **A máscara é lida, não presumida.** Aqui havia `/24` chumbado, e na rede desta
+# Pi o prefixo é /22 (10.13.60.159/22, gateway 10.13.63.250). Com /24, o gateway
+# cai FORA da sub-rede calculada e o estático não roteia — quem seguisse a
+# instrução derrubaria a rede de uma Pi headless e precisaria de acesso físico
+# para voltar. É o tipo de erro que só aparece em rede cujo prefixo não é /24.
+CIDR="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | grep -m1 "^${IP}/" || true)"
+: "${CIDR:=${IP}/24}"
+
 echo ""
 echo "  Para fixá-lo — escolha UM:"
 echo ""
@@ -258,7 +269,7 @@ echo "     Reservar ${IP} para o MAC $(cat /sys/class/net/$(ip route show defaul
 echo ""
 echo "  b) Estático na Pi, via NetworkManager:"
 echo "     sudo nmcli con mod \"\$(nmcli -g NAME con show --active | head -1)\" \\"
-echo "       ipv4.addresses ${IP}/24 ipv4.gateway $(ip route show default | awk '{print $3; exit}') \\"
+echo "       ipv4.addresses ${CIDR} ipv4.gateway $(ip route show default | awk '{print $3; exit}') \\"
 echo "       ipv4.dns 1.1.1.1 ipv4.method manual"
 echo "     sudo nmcli con up \"\$(nmcli -g NAME con show --active | head -1)\""
 
@@ -285,27 +296,47 @@ if [[ -z "$SAUDE" ]]; then
 fi
 ok "API respondendo"
 
-echo "$SAUDE" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-print(f"    banco:    {\"ok\" if d[\"banco\"] else \"NAO RESPONDE\"}")
-print(f"    triagem:  {d[\"triagem\"][\"modo\"]}")
-print(f"    notif:    {d[\"notificacao\"][\"provider\"]}")
-mont = "montado" if d["frontend"]["montado"] else "AUSENTE - rode make deploy"
-print(f"    frontend: {mont}  build-id {d[\"frontend\"][\"build_id\"] or \"-\"}")
+# O JSON entra por **variável de ambiente**, não por stdin, para o heredoc poder
+# ser citado (<<'PY'). Aqui havia um `python3 -c '...'` cujas f-strings usavam
+# `\"` para escapar as aspas — e o bash, dentro de aspas simples, não processa a
+# barra, então o Python recebia a barra literal e morria com
+#
+#   SyntaxError: unexpected character after line continuation character
+#
+# em toda execução. O `|| aviso` rebaixava isso a aviso e o script saía 0, então
+# a conferência ficava quieta e quebrada. `bash -n` não vê Python embutido; só
+# rodar de verdade na Pi expôs.
+SAUDE="$SAUDE" python3 <<'PY' || aviso "não consegui formatar o /health"
+import json, os
+
+d = json.loads(os.environ["SAUDE"])
+print("    banco:    " + ("ok" if d["banco"] else "NAO RESPONDE"))
+print("    triagem:  " + d["triagem"]["modo"])
+print("    notif:    " + d["notificacao"]["provider"])
+montado = "montado" if d["frontend"]["montado"] else "AUSENTE - rode make deploy"
+print(f"    frontend: {montado}  build-id {d['frontend']['build_id'] or '-'}")
 if d["avisos"]:
     print()
     print("    avisos:")
-    for a in d["avisos"]:
-        print(f"      ! {a}")
-' || aviso "não consegui formatar o /health"
+    for aviso in d["avisos"]:
+        print(f"      ! {aviso}")
+PY
 
 titulo "Aponte o tablet para"
 
+# As duas colunas alinhadas a partir das URLs **já montadas**. O cálculo
+# anterior usava ${#NOME} contra uma linha que imprime "${NOME}.local", e saía
+# 6 colunas curto — o ".local" não entrava na conta.
+URL_MDNS="http://${NOME}.local:${PORTA}"
+URL_IP="http://${IP}:${PORTA}"
+LARGURA=$(( ${#URL_MDNS} > ${#URL_IP} ? ${#URL_MDNS} : ${#URL_IP} ))
+
 echo ""
-echo "    http://${NOME}.local:${PORTA}      (mDNS — preferido)"
-echo "    http://${IP}:${PORTA}$(printf '%*s' $(( ${#NOME} - ${#IP} + 6 )) '')(IP — plano B)"
+printf '    %-*s  (mDNS — preferido)\n' "$LARGURA" "$URL_MDNS"
+printf '    %-*s  (IP — plano B)\n'     "$LARGURA" "$URL_IP"
 echo ""
-echo "  Conferir de outro dispositivo da rede:"
-echo "    curl http://${NOME}.local:${PORTA}/api/v1/health"
+echo "  Conferir de outro dispositivo da rede — o tablet precisa estar na MESMA"
+echo "  rede da Pi para o .local resolver (mDNS não passa por roteador):"
+echo "    curl ${URL_MDNS}/api/v1/health"
+echo "    curl ${URL_IP}/api/v1/health      (de qualquer sub-rede que alcance)"
 echo ""
