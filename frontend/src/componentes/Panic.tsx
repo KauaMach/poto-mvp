@@ -45,7 +45,13 @@ export function Panic({ onAcionar, desabilitado = false }: Props) {
   /* Guarda o callback mais recente sem reiniciar o timer: sem isto, um
    * `onAcionar` recriado a cada render do pai cancelaria a pressão em curso. */
   const acionar = useRef(onAcionar);
-  acionar.current = onAcionar;
+  /* Atualizado em efeito e não no corpo do render: atribuir durante o render é
+   * impuro, e sob renderização concorrente o React pode renderizar e descartar
+   * — o ref guardaria um callback de um render que nunca existiu. O efeito roda
+   * depois do commit, antes de qualquer `pointerdown` poder chegar. */
+  useEffect(() => {
+    acionar.current = onAcionar;
+  }, [onAcionar]);
 
   const limpar = useCallback(() => {
     if (timer.current !== null) {

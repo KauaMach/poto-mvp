@@ -21,17 +21,20 @@ export function useEventosWS(
   ao: (evento: EventoWS) => void,
   ativo = true,
 ): EstadoWS {
-  const [estado, setEstado] = useState<EstadoWS>("conectando");
+  /* `estadoSocket` guarda só o que vem do socket. O caso `!ativo` é
+   * **derivado** no retorno, não armazenado: guardá-lo exigiria um `setState`
+   * síncrono no corpo do efeito, que provoca um render extra e pode sair de
+   * sincronia com a prop. Estado derivável não deve ser estado. */
+  const [estadoSocket, setEstadoSocket] = useState<EstadoWS>("conectando");
   /* O callback num `ref`: sem isto, um handler recriado a cada render
    * reabriria o socket em laço. */
   const tratar = useRef(ao);
-  tratar.current = ao;
+  useEffect(() => {
+    tratar.current = ao;
+  }, [ao]);
 
   useEffect(() => {
-    if (!ativo) {
-      setEstado("fechado");
-      return;
-    }
+    if (!ativo) return;
 
     let socket: WebSocket | null = null;
     let religar: number | null = null;
@@ -44,11 +47,11 @@ export function useEventosWS(
        * por HTTPS, e fixar `wss` quebraria o totem na rede local, que é HTTP. */
       const esquema = location.protocol === "https:" ? "wss:" : "ws:";
       socket = new WebSocket(`${esquema}//${location.host}/api/v1/ws`);
-      setEstado("conectando");
+      setEstadoSocket("conectando");
 
       socket.onopen = () => {
         espera = ESPERA_INICIAL_MS; // reconexão bem-sucedida zera a espera
-        setEstado("aberto");
+        setEstadoSocket("aberto");
       };
 
       socket.onmessage = (e) => {
@@ -61,7 +64,7 @@ export function useEventosWS(
       };
 
       socket.onclose = () => {
-        setEstado("fechado");
+        setEstadoSocket("fechado");
         if (!vivo) return;
         religar = window.setTimeout(conectar, espera);
         espera = Math.min(espera * 2, ESPERA_MAXIMA_MS);
@@ -86,5 +89,6 @@ export function useEventosWS(
     };
   }, [ativo]);
 
-  return estado;
+  /* Derivado: sem socket ativo não há conexão a reportar. */
+  return ativo ? estadoSocket : "fechado";
 }

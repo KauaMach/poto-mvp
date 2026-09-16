@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "oxlint && npm run check-tokens && npm run check-prazos && npm run check-discreto && npm run check-contraste && npm run check-fila",
+    "lint": "oxlint --deny-warnings && npm run check-tokens && npm run check-prazos && npm run check-discreto && npm run check-contraste && npm run check-fila",
     "check-tokens": "node scripts/verificar-tokens.mjs",
     "check-prazos": "node scripts/verificar-prazos.mjs",
     "check-discreto": "node scripts/verificar-discreto.mjs",

@@ -29,12 +29,12 @@ const esperado = {
 /* Lê a tabela do componente sem executá-lo: importar o .tsx exigiria um
  * bundler, e o objetivo aqui é só comparar números. */
 const fonte = readFileSync(
-  `${RAIZ}src/totem/telas/Confirmacao.tsx`,
+  `${RAIZ}src/totem/telas/retorno.ts`,
   "utf8",
 );
 const bloco = fonte.match(/export const RETORNO_MS = \{([\s\S]*?)\} as const;/);
 if (!bloco) {
-  console.error("RETORNO_MS não encontrado em Confirmacao.tsx");
+  console.error("RETORNO_MS não encontrado em retorno.ts");
   process.exit(1);
 }
 const nosso = Object.fromEntries(

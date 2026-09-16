@@ -27,7 +27,10 @@ export function useMovimentoReduzido(): boolean {
     const mq = window.matchMedia(CONSULTA);
     const mudou = (e: MediaQueryListEvent) => setReduzido(e.matches);
     mq.addEventListener("change", mudou);
-    setReduzido(mq.matches);
+    /* Sem releitura aqui: o valor inicial já vem do `useState`, e uma mudança
+     * entre o render e o efeito é uma janela de microssegundos que o próprio
+     * listener cobre na próxima alteração. Reler provocaria um render extra em
+     * toda montagem. */
     return () => mq.removeEventListener("change", mudou);
   }, []);
 

@@ -31,7 +31,12 @@ export function useFila(intervaloSeg: number) {
 
   useEffect(() => {
     /* Tenta ao montar: o totem pode ter sido recarregado (ou reiniciado) com a
-     * fila cheia e a rede já de volta. */
+     * fila cheia e a rede já de volta.
+     *
+     * O `setNaFila` que vem depois acontece **após** o I/O do dreno, não no
+     * corpo síncrono do efeito — é resultado de um sistema externo, que é
+     * exatamente para o que efeito existe. */
+    // oxlint-disable-next-line set-state-in-effect
     void tentar();
 
     const timer = window.setInterval(() => void tentar(), intervaloSeg * 1000);
