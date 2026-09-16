@@ -40,7 +40,7 @@
 | MVP-015 | Criação de chamado com idempotência | F2 | P0 | 014 | ✅ Concluída |
 | MVP-016 | Consulta e atualização de chamados | F2 | P0 | 015 | ✅ Concluída |
 | MVP-017 | Máquina de estados (`estado_log`) | F2 | P0 | 015 | ✅ Concluída |
-| MVP-018 | Testes de persistência e idempotência | F2 | P0 | 015–017 | Pendente |
+| MVP-018 | Testes de persistência e idempotência | F2 | P0 | 015–017 | ✅ Concluída |
 | MVP-019 | Portar datasets de triagem | F3 | P0 | 002 | Pendente |
 | MVP-020 | Classificador TF-IDF + LogReg | F3 | P0 | 019 | Pendente |
 | MVP-021 | Script de treino e avaliação | F3 | P0 | 020 | Pendente |
@@ -404,14 +404,25 @@
 
 ### MVP-018 — Testes de persistência e idempotência
 - **Descrição:** Cobrir criação, duplicata, listagem, filtros e transições.
-- **Prioridade:** P0 · **Depende de:** 015–017 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 015–017 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/tests/test_db.py`
 - **Critérios de aceitação:**
   - Reenviar o mesmo `evento_id` 3× resulta em **1** chamado
   - Protocolos são sequenciais e únicos
   - Filtros de listagem funcionam combinados
   - Usa banco temporário (`tmp_path`), nunca o `poto.db` real
-- **Como validar:** `uv run pytest tests/test_db.py -v`
+- **Como validar:** `uv run pytest tests/test_db.py -v` — 49 testes
+
+> **Lacuna encontrada e coberta.** A concorrência testada na MVP-015 usava o *mesmo*
+> `evento_id`. Faltava o caso oposto: eventos **distintos** chegando juntos — vários
+> totens acionando ao mesmo tempo, ou a fila offline drenando em lote. Se a geração de
+> protocolo colidisse ali, dois chamados diferentes teriam o mesmo número e um deles
+> sumiria da busca da central. `test_protocolos_nao_colidem_sob_concorrencia` cobre com
+> 20 threads simultâneas.
+>
+> Também travado: o reenvio **não sobrescreve** o conteúdo original. O `evento_id` nasce
+> de uma única ação da pessoa, então conteúdo divergente num reenvio significa dado
+> corrompido no caminho, não correção — a primeira escrita vence.
 
 ---
 

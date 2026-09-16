@@ -470,3 +470,105 @@ def test_trilha_sobrevive_a_tentativa_de_adulteracao(banco, roteamento):
                 con.execute(sql, (cid,))
 
     assert db.listar_estados(cid) == antes
+
+
+# ===========================================================================
+# Consolidação de persistência (MVP-018)
+# ===========================================================================
+
+
+def test_protocolos_nao_colidem_sob_concorrencia(banco, roteamento):
+    """Eventos DISTINTOS chegando juntos — vários totens acionando ao mesmo
+    tempo, ou a fila offline drenando em lote. Se a geração de protocolo
+    colidisse, dois chamados diferentes teriam o mesmo número e um deles
+    sumiria da busca da central."""
+    eventos = [evento() for _ in range(20)]
+    resultados: list = []
+    barreira = threading.Barrier(len(eventos))
+
+    def criar(ev):
+        barreira.wait()
+        try:
+            resultados.append(db.criar_chamado(ev, roteamento))
+        except Exception as erro:  # noqa: BLE001
+            resultados.append(erro)
+
+    threads = [threading.Thread(target=criar, args=(ev,)) for ev in eventos]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not [r for r in resultados if isinstance(r, Exception)]
+    protocolos = [r["chamado_id"] for r in resultados]
+    assert len(set(protocolos)) == len(eventos), "protocolo repetido"
+
+    with db.conectar() as con:
+        assert con.execute("SELECT count(*) FROM chamados").fetchone()[0] == len(eventos)
+
+
+def test_protocolos_sao_unicos_em_volume(banco, roteamento):
+    protocolos = {
+        db.criar_chamado(evento(), roteamento)["chamado_id"] for _ in range(50)
+    }
+    assert len(protocolos) == 50
+
+
+def test_reenvio_nao_sobrescreve_o_conteudo_original(banco, roteamento):
+    """Primeira escrita vence. O `evento_id` nasce de uma única ação da pessoa,
+    então conteúdo divergente no reenvio significa dado corrompido no caminho —
+    não uma correção."""
+    ev = evento(texto_livre="texto original")
+    primeiro = db.criar_chamado(ev, roteamento)
+
+    adulterado = {**ev, "texto_livre": "texto trocado", "totem_id": "OUTRO-TOTEM"}
+    repetido = db.criar_chamado(adulterado, roteamento)
+
+    assert repetido["_duplicado"] is True
+    assert repetido["texto_livre"] == "texto original"
+    assert repetido["totem_id"] == primeiro["totem_id"]
+
+
+def test_dado_persiste_entre_conexoes(banco, roteamento):
+    """Cada operação abre a própria conexão: se o commit não acontecesse, a
+    leitura seguinte não enxergaria nada."""
+    c = db.criar_chamado(evento(), roteamento)
+    db.atualizar_chamado(c["chamado_id"], status=StatusChamado.notificado)
+
+    relido = db.obter_chamado(c["chamado_id"])
+    assert relido["status"] == "notificado"
+    assert len(db.listar_estados(c["chamado_id"])) == 2
+
+
+def test_suite_nunca_toca_o_banco_real(banco):
+    """Guarda contra um teste futuro que esqueça a fixture e escreva no
+    poto.db de desenvolvimento."""
+    assert "/tmp" in config.DB_PATH or "pytest" in config.DB_PATH
+    assert not config.DB_PATH.endswith("backend/poto.db")
+
+
+def test_filtros_combinados_em_volume(banco):
+    """Os três filtros ao mesmo tempo, com dados de trilhas diferentes."""
+    for tipo in (TipoOcorrencia.seguranca, TipoOcorrencia.mulher, TipoOcorrencia.ouvidoria):
+        for _ in range(4):
+            db.criar_chamado(evento(tipo_ocorrencia=tipo), rotear(tipo))
+
+    assert len(db.listar_chamados()) == 12
+    assert len(db.listar_chamados(tipo="mulher")) == 4
+    assert len(db.listar_chamados(tipo="mulher", status="roteado")) == 4
+    assert (
+        len(
+            db.listar_chamados(
+                tipo="mulher", status="roteado", gravidade="risco_potencial"
+            )
+        )
+        == 4
+    )
+    assert (
+        len(
+            db.listar_chamados(
+                tipo="mulher", status="roteado", gravidade="risco_imediato"
+            )
+        )
+        == 0
+    )
