@@ -41,7 +41,7 @@
 | MVP-016 | Consulta e atualização de chamados | F2 | P0 | 015 | ✅ Concluída |
 | MVP-017 | Máquina de estados (`estado_log`) | F2 | P0 | 015 | ✅ Concluída |
 | MVP-018 | Testes de persistência e idempotência | F2 | P0 | 015–017 | ✅ Concluída |
-| MVP-019 | Portar datasets de triagem | F3 | P0 | 002 | Pendente |
+| MVP-019 | Portar datasets de triagem | F3 | P0 | 002 | ✅ Concluída |
 | MVP-020 | Classificador TF-IDF + LogReg | F3 | P0 | 019 | Pendente |
 | MVP-021 | Script de treino e avaliação | F3 | P0 | 020 | Pendente |
 | MVP-022 | Heurística de palavras-chave | F3 | P0 | 009 | Pendente |
@@ -433,13 +433,30 @@
 
 ### MVP-019 — Portar datasets de triagem
 - **Descrição:** Copiar os datasets de `../poto/scripts/` e ampliar com variações morfológicas.
-- **Prioridade:** P0 · **Depende de:** 002 · **Status:** Pendente
-- **Arquivos:** `backend/scripts/triagem_dataset.json`, `backend/scripts/bench_dataset.json`
+- **Prioridade:** P0 · **Depende de:** 002 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/scripts/triagem_dataset.json`, `backend/scripts/bench_dataset.json`, `backend/tests/test_datasets.py`
 - **Critérios de aceitação:**
   - Treino com ≥ 77 exemplos; held-out com 42, **sem sobreposição** com o treino
   - Cada item tem `texto`, `tipo` e `gravidade`
   - Acrescentadas variações que quebravam a heurística: `desmaiando`, `desmaiei`, `to passando mal`, `socorro`, `socorroo`, `tão me seguindo`
-- **Como validar:** verificar que nenhum `texto` do bench aparece no treino
+- **Como validar:** verificar que nenhum `texto` do bench aparece no treino — 28 testes
+
+> **Decisão metodológica.** As frases da suíte de regressão (MVP-025) entram **no
+> treino**, de propósito. As duas coisas medem propósitos diferentes:
+>
+> - `bench_dataset.json` (held-out, 42, sobreposição zero) mede **generalização** —
+>   acertar frases que o modelo nunca viu. É daí que sai o número honesto de acurácia.
+> - A suíte de regressão trava **comportamento** em entradas críticas conhecidas. Não é
+>   medida de acurácia: é garantia de que "socorro" e "estou desmaiando" não voltam a
+>   errar, nunca.
+>
+> Deixar as frases críticas fora do treino para "não contaminar" tornaria o
+> comportamento delas incerto — exatamente o oposto do que se quer nos casos que já
+> falharam uma vez.
+>
+> 28 exemplos novos (77 → 105), cobrindo morfologia (`desmaiando`/`desmaiei`/`desmaiou`),
+> erros de digitação (`socorroo`, `passando maal`), fala regional (`tô`, `tão`, `ta`) e
+> as trivialidades de ouvidoria que o portão mal calibrado transformava em ruído.
 
 ### MVP-020 — Classificador TF-IDF + LogReg
 - **Descrição:** Motor de triagem offline, com degradação graciosa se o artefato não existir.
