@@ -103,7 +103,7 @@
 | MVP-067c | Kiosk no Galaxy Tab A11 | F9 | P0 | 055b, 067b | ✅ Concluída |
 | ~~MVP-068~~ | ~~Daemon do botão GPIO~~ | — | **P2** | — | Fora do MVP |
 | MVP-069 | `install-pi.sh` (sem Node) | F9 | P0 | 067b, 066b | ⚠️ Parcial |
-| MVP-070 | Teste de resiliência (Pi + tablet) | F9 | P0 | 069, 067c | Pendente |
+| MVP-070 | Teste de resiliência (Pi + tablet) | F9 | P0 | 069, 067c | ⚠️ Parcial |
 | MVP-071 | Seed e `make demo-reset` | F10 | P0 | 066 | Pendente |
 | MVP-072 | Roteiro de demo e plano B | F10 | P0 | 070, 071 | Pendente |
 
@@ -2743,7 +2743,8 @@
 ### MVP-070 — Teste de resiliência (Pi + tablet)
 - **Descrição:** Provar que o conjunto se recupera sozinho, incluindo a queda de rede que
   esta topologia introduz.
-- **Prioridade:** P0 · **Depende de:** 069 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 069 · **Status:** ⚠️ Parcial — roteiro escrito;
+  **1 dos 7 itens executado**, os outros exigem a Pi e o tablet
 - **Arquivos:** `docs/aceite-mvp.md`
 - **Critérios de aceitação:**
   - `reboot` da Pi → API respondendo em **< 60 s**; o tablet **reconecta sozinho** sem toque
@@ -2754,7 +2755,32 @@
     drena sem duplicar
   - **Pi desligada com o tablet aberto** → totem não trava nem mostra erro técnico; enfileira
   - Tablet reiniciado → volta à aplicação seguindo `docs/setup-tablet.md`
-- **Como validar:** executar o roteiro com cronômetro e registrar os tempos
+- **Como validar:** executar o roteiro com cronômetro e registrar os tempos — o documento
+  tem os sete itens com número esperado e espaço para o medido
+
+> **Um item foi executado de verdade: a integridade do banco sob corte de energia.**
+> Simulado com `SIGKILL` no meio de escritas contínuas — sem flush, sem rollback, sem
+> encerramento gracioso, que é o que um cabo arrancado faz. Resultado: `integrity_check`
+> **ok**, `journal_mode` **wal**, **103 chamados** recuperados (≥100 confirmados antes do
+> kill), **0** linhas órfãs em `estado_log`, **0** protocolos com o marcador `pendente:` e
+> **0** `evento_id` duplicado.
+>
+> As duas penúltimas linhas importam mais que a integridade do arquivo. O `criar_chamado`
+> insere com um marcador e corrige o protocolo **na mesma transação** (MVP-016); se o WAL
+> não fosse atômico, um `SIGKILL` no meio deixaria `pendente:<uuid>` visível no painel. E o
+> `estado_log` sem órfãs prova que a linha de histórico e o chamado entram juntos ou não
+> entram.
+>
+> **Duas armadilhas no caminho, ambas minhas.** A primeira rodada do teste foi **vazia**: o
+> subprocesso não achou o módulo `app` (faltava `PYTHONPATH`), então ele checou o banco de
+> desenvolvimento com **zero escritas** — e imprimiu "banco íntegro ✓". Um teste que passa
+> sem exercitar nada é pior que um que falha. A segunda armadilha está registrada no
+> documento: usar `SIGTERM` em vez de `SIGKILL` deixaria o SQLite fechar ordenadamente, e o
+> teste passaria sem provar nada sobre corte de energia.
+>
+> Os outros seis itens estão marcados `⏳ pendente` com o espaço "medido" **vazio de
+> propósito**. Preencher é parte do aceite — *"reiniciou rápido"* não é um resultado, e o
+> documento diz isso.
 
 ---
 
