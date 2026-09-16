@@ -31,7 +31,7 @@
 | MVP-006 | Lint e formatação (ruff + oxlint) | F1 | P1 | 002, 003 | ✅ Concluída |
 | MVP-007 | Makefile com alvos de desenvolvimento | F1 | P0 | 002, 003 | ✅ Concluída |
 | MVP-008 | Commit inicial e push | F1 | P0 | 001–007 | ✅ Concluída |
-| MVP-009 | Enums do domínio | F2 | P0 | 002 | Pendente |
+| MVP-009 | Enums do domínio | F2 | P0 | 002 | ✅ Concluída |
 | MVP-010 | Contratos Pydantic de entrada e saída | F2 | P0 | 009 | Pendente |
 | MVP-011 | Catálogo de canais e config de SLA | F2 | P0 | 004, 009 | Pendente |
 | MVP-012 | Roteador determinístico | F2 | P0 | 009, 011 | Pendente |
@@ -228,12 +228,25 @@
 
 ### MVP-009 — Enums do domínio
 - **Descrição:** Portar de `../poto/backend/app/models.py` os enums que definem a linguagem do sistema.
-- **Prioridade:** P0 · **Depende de:** 002 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 002 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/app/models.py`
 - **Critérios de aceitação:**
   - `TipoOcorrencia`, `Modo`, `OrigemAcionamento`, `Gravidade`, `StatusChamado` com os valores literais de ARCHITECTURE.md §4
-  - Todos herdam de `str, Enum` (serializam direto em JSON)
+  - Todos são `StrEnum` — ver nota abaixo (o critério original pedia `str, Enum`)
 - **Como validar:** `uv run python -c "from app.models import Gravidade; print(list(Gravidade))"`
+
+> **Correção aplicada durante a execução.** O critério pedia `class X(str, Enum)`, que é
+> como o projeto de referência fazia. O ruff apontou (UP042) e estava certo por um motivo
+> que importa: com essa forma, `str(Gravidade.risco_imediato)` devolve
+> `"Gravidade.risco_imediato"`, não o valor — e o mesmo vale para f-strings. Bastaria um
+> `str(...)` no caminho até o SQLite ou até a mensagem de notificação para gravar lixo
+> em silêncio. `StrEnum` (Python 3.11+, que já exigimos) devolve o valor em qualquer
+> contexto de string. A intenção do critério — serializar direto em JSON — é atendida
+> igual, com uma classe de bug a menos.
+>
+> Também **não** foram portados `pendente_validacao` nem o enum `NivelRisco`: o portão
+> de validação humana ficou fora do escopo do MVP, o que contorna de vez o defeito de
+> calibração que o diagnóstico encontrou no projeto de referência.
 
 ### MVP-010 — Contratos Pydantic de entrada e saída
 - **Descrição:** Modelos de request/response da API.
