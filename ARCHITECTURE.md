@@ -197,6 +197,10 @@ Medido no mesmo held-out de 42 exemplos:
 | **TF-IDF + LogReg** | **83,3%** | **85,7%** | **3,3 ms** | **sim** |
 
 Os LLMs que cabem na Pi são ruins demais para decidir se chama o SAMU; os bons não cabem.
+
+> **Medições completas em [`docs/inferencia.md`](docs/inferencia.md)**, incluindo os números
+> obtidos na própria Pi (88,1% tipo · 88,1% gravidade · 6,01 ms) e a análise de direção do
+> erro: zero subestimações de gravidade.
 TF-IDF com n-gramas de **palavra + caractere** tolera erro de digitação e variação
 morfológica — é o que faz "socorroo", "tão me seguindo" e "passando maal" caírem no lugar
 certo com apenas 77 exemplos rotulados.

@@ -56,6 +56,8 @@ A primeira explica a fila offline e o roteamento determinístico. A segunda expl
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Arquitetura, decisões técnicas, API, banco, fluxos |
 | [`TASKS.md`](TASKS.md) | As 82 tasks com critérios de aceitação e status |
 | [`CLAUDE.md`](CLAUDE.md) | Diretrizes do projeto (autoria de commits) |
+| [`docs/inferencia.md`](docs/inferencia.md) | Medições do classificador: por que não um LLM |
+| [`docs/conexao-ssh.md`](docs/conexao-ssh.md) | Como conectar na Raspberry Pi por SSH |
 
 ---
 
