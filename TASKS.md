@@ -32,7 +32,7 @@
 | MVP-007 | Makefile com alvos de desenvolvimento | F1 | P0 | 002, 003 | ✅ Concluída |
 | MVP-008 | Commit inicial e push | F1 | P0 | 001–007 | ✅ Concluída |
 | MVP-009 | Enums do domínio | F2 | P0 | 002 | ✅ Concluída |
-| MVP-010 | Contratos Pydantic de entrada e saída | F2 | P0 | 009 | Pendente |
+| MVP-010 | Contratos Pydantic de entrada e saída | F2 | P0 | 009 | ✅ Concluída |
 | MVP-011 | Catálogo de canais e config de SLA | F2 | P0 | 004, 009 | Pendente |
 | MVP-012 | Roteador determinístico | F2 | P0 | 009, 011 | Pendente |
 | MVP-013 | Testes do roteador | F2 | P0 | 012 | Pendente |
@@ -250,8 +250,8 @@
 
 ### MVP-010 — Contratos Pydantic de entrada e saída
 - **Descrição:** Modelos de request/response da API.
-- **Prioridade:** P0 · **Depende de:** 009 · **Status:** Pendente
-- **Arquivos:** `backend/app/models.py`
+- **Prioridade:** P0 · **Depende de:** 009 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/models.py`, `backend/tests/test_models.py`
 - **Critérios de aceitação:**
   - `EventoIn` (`evento_id`, `totem_id`, `tipo_ocorrencia`, `modo`, `origem_acionamento`, `texto_livre?`, `timestamp_local?`)
   - `EventoOut` (`chamado_id`, `status`, `canal_roteado`, `gravidade`, `instrucao_totem`, `duplicado`)
@@ -259,6 +259,21 @@
   - `PanicoIn`, `PanicoOut`, `ChamadoUpdate`, `EscalonamentoIn`
   - `evento_id` validado como UUID
 - **Como validar:** `uv run pytest tests/test_models.py`
+
+> **Decisões tomadas durante a execução.**
+>
+> 1. **`destino` removido de `CanalOpcao` e `CanalResultado`.** O projeto de referência
+>    expunha o telefone do canal na resposta de `/panico` — que é um endpoint **aberto**,
+>    sem credencial, por decisão de projeto. Isso entregaria os contatos institucionais
+>    (CSV, Sala Lilás) a qualquer um que alcance a API. O destino efetivo continua
+>    registrado em `notificacoes`, atrás do token do painel.
+> 2. **`evento_id` é `UUID`, não `str`.** A idempotência inteira depende dele: uma chave
+>    malformada criaria um segundo chamado para a mesma emergência no reenvio.
+> 3. **`timestamp_local` continua `str`, não `datetime`.** É diagnóstico. Um tablet com o
+>    relógio dessincronizado não pode fazer um pedido de socorro falhar com 422 — o
+>    horário autoritativo é o `created_at` do servidor.
+> 4. **`firmware_versao`, `assinatura` e `ValidacaoIn` não foram portados** — fora do
+>    escopo do MVP.
 
 ### MVP-011 — Catálogo de canais e config de SLA
 - **Descrição:** Definir os 8 canais institucionais, os grupos de pânico e os prazos de SLA.
