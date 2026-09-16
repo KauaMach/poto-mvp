@@ -37,7 +37,7 @@
 | MVP-012 | Roteador determinístico | F2 | P0 | 009, 011 | ✅ Concluída |
 | MVP-013 | Testes do roteador | F2 | P0 | 012 | ✅ Concluída |
 | MVP-014 | Schema SQLite + WAL + índices | F2 | P0 | 009 | ✅ Concluída |
-| MVP-015 | Criação de chamado com idempotência | F2 | P0 | 014 | Pendente |
+| MVP-015 | Criação de chamado com idempotência | F2 | P0 | 014 | ✅ Concluída |
 | MVP-016 | Consulta e atualização de chamados | F2 | P0 | 015 | Pendente |
 | MVP-017 | Máquina de estados (`estado_log`) | F2 | P0 | 015 | Pendente |
 | MVP-018 | Testes de persistência e idempotência | F2 | P0 | 015–017 | Pendente |
@@ -343,8 +343,8 @@
 
 ### MVP-015 — Criação de chamado com idempotência
 - **Descrição:** Inserir um chamado gerando o protocolo, tratando reenvio do mesmo `evento_id`.
-- **Prioridade:** P0 · **Depende de:** 014 · **Status:** Pendente
-- **Arquivos:** `backend/app/db.py`
+- **Prioridade:** P0 · **Depende de:** 014 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/db.py`, `backend/tests/test_db.py`
 - **Critérios de aceitação:**
   - `criar_chamado(evento, routing, triagem) -> dict`
   - Protocolo no formato `CALL-{ano}-{sequencial:06d}`
@@ -352,6 +352,16 @@
   - `texto_livre` é gravado; `triagem_json` guarda a decisão da triagem
   - Registra o estado inicial em `estado_log`
 - **Como validar:** `uv run pytest tests/test_db.py::test_idempotencia`
+
+> **Nota de implementação.** O protocolo deriva do `rowid` que o SQLite atribui, não de
+> um `SELECT count(*)`: dois acionamentos simultâneos nunca recebem o mesmo número,
+> porque quem numera é o banco. Como o rowid só existe depois do INSERT, a linha nasce
+> com um marcador e é corrigida na mesma transação — um teste garante que o marcador
+> nunca sobrevive.
+>
+> A consulta antes de inserir é só caminho rápido; quem fecha a corrida de verdade é a
+> constraint UNIQUE, com o `IntegrityError` tratado. `test_idempotencia_sob_concorrencia`
+> prova com 12 threads partindo juntas: 1 criado, 11 duplicados, 0 exceções.
 
 ### MVP-016 — Consulta e atualização de chamados
 - **Descrição:** Funções de leitura e mutação usadas pela API.
