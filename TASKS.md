@@ -98,7 +98,7 @@
 | MVP-079 | Custo de CPU e latência na Pi | F8b | P0 | 075, 076 | Pendente |
 | MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | ✅ Concluída |
 | MVP-066b | `make deploy` e build-id verificável | F9 | P0 | 066 | ✅ Concluída |
-| MVP-067 | Unit systemd na Pi (API) | F9 | P0 | 066 | ⚠️ Parcial |
+| MVP-067 | Unit systemd na Pi (API) | F9 | P0 | 066 | ✅ Concluída |
 | MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | ⚠️ Parcial |
 | MVP-067c | Kiosk no Galaxy Tab A11 | F9 | P0 | 055b, 067b | ✅ Concluída |
 | ~~MVP-068~~ | ~~Daemon do botão GPIO~~ | — | **P2** | — | Fora do MVP |
@@ -2641,9 +2641,11 @@
   `/api/v1/health` 200 json · `/fonts/michroma-latin.woff2` 200 font/woff2 ·
   `/manifest.webmanifest` 200 · `/icones/poto-192.png` 200 · `/api/v1/nao-existe` **404 json**
 
-> **`make serve` existe para ser o mesmo comando que a unit systemd executa** (MVP-067).
-> Dois comandos diferentes divergiriam, e a divergência apareceria só na Pi. Duas
-> diferenças em relação a `make backend`, e as duas importam:
+> **`make serve` usa os mesmos argumentos de servidor que a unit systemd executa**
+> (MVP-067) — são eles que mudam o comportamento observável. A invocação difere: aqui
+> `uv run uvicorn`, na unit o binário do venv direto. O porquê está na MVP-067; em
+> resumo, `uv run` precisa escrever em `~/.cache/uv` e o sandbox da unit não permite.
+> Duas diferenças em relação a `make backend`, e as duas importam:
 >
 > - **`--host 0.0.0.0`** — sem isto o uvicorn escuta só em `127.0.0.1` e o tablet não
 >   alcança. O sintoma é "funciona na Pi, não funciona no tablet", que custa meia hora até
@@ -2726,17 +2728,21 @@
 ### MVP-067 — Unit systemd na Pi
 - **Descrição:** Um único serviço que sobe sozinho no boot. Sem unit de kiosk (o navegador
   roda no tablet) e sem unit de GPIO (o pânico é virtual). A Pi opera **headless**.
-- **Prioridade:** P0 · **Depende de:** 066 · **Status:** ⚠️ Parcial — unit escrita e
-  validada; **o teste após reboot exige a Pi**
+- **Prioridade:** P0 · **Depende de:** 066 · **Status:** ✅ Concluída — validada com
+  reboot real
 - **Arquivos:** `deploy/poto-api.service`
 - **Critérios de aceitação:**
   - uvicorn **sem `--reload`**, `--host 0.0.0.0` (o tablet precisa alcançar)
   - `Restart=always`, `RestartSec=3`, `EnvironmentFile`, `After=network-online.target`
   - Funciona com a Pi sem monitor, teclado ou periférico conectado
   - `journalctl -u poto-api` mostra os logs da aplicação
-- **Como validar:** `systemctl status poto-api` após reboot, com a Pi headless — **não
-  executado**: a Pi está inalcançável deste ambiente (ver nota). A unit foi validada com
-  `systemd-analyze verify` e as nove chaves críticas conferidas por script
+- **Como validar:** `systemctl status poto-api` após reboot, com a Pi headless —
+  **executado em 16/09 na Pi real** (`RaspPoto`, headless, wlan0):
+  `systemctl reboot` → `is-enabled` **enabled** · `is-active` **active** ·
+  `/api/v1/health` **200** com `status: ok`, medido **de fora do aparelho** em **31 s**
+  contados do disparo do reboot (inclui o desligamento). Antes disso, a unit já havia
+  sido validada com `systemd-analyze verify` e as nove chaves críticas conferidas por
+  script
 
 > **O `systemd-analyze verify` pegou um bug real.** Eu havia posto
 > `StartLimitIntervalSec` e `StartLimitBurst` em `[Service]`, e ali elas são
@@ -2756,8 +2762,28 @@
 > código 0 por um caminho inesperado — reergue. Um totem de emergência não pode ficar fora
 > do ar porque o processo decidiu terminar.
 >
-> **O `ExecStart` é o mesmo comando de `make serve`**, e isso é deliberado: dois comandos
-> diferentes divergiriam, e a divergência apareceria só na Pi.
+> **O `ExecStart` chama `.venv/bin/uvicorn`, não `uv run uvicorn` — e isto custou uma
+> falha em laço na Pi.** O serviço subia e morria com
+>
+> ```
+> error: Could not acquire lock
+>   cause: Read-only file system (os error 30)
+>          at path "/home/raspoto/.cache/uv/.tmpoaoA5K"
+> ```
+>
+> `ProtectHome=read-only` torna todo o `/home` somente-leitura, e o `ReadWritePaths`
+> reabria só o diretório do projeto — não o cache do uv, que o `uv run` escreve a cada
+> invocação. A saída não foi abrir o cache no sandbox, foi **não depender dele**.
+>
+> Vale além do sandbox: `uv run` resolve dependências a cada chamada, o que é o que se
+> quer em desenvolvimento e o oposto do que se quer num serviço — põe cache e rede no
+> caminho crítico do boot, contra o critério de 60 s da MVP-070. Os argumentos do servidor
+> seguem idênticos aos de `make serve`, que são os que importam.
+>
+> **O teto de reinícios provou seu valor na mesma falha.** Em vez de laço infinito, o
+> journal registrou `Start request repeated too quickly` após 5 tentativas e o serviço
+> parou — o `StartLimitBurst` que o `systemd-analyze` me obrigou a mover para `[Unit]`
+> funcionou exatamente como projetado.
 >
 > `EnvironmentFile` com `-` prefixado: o serviço sobe mesmo sem o `.env`. Degradado — e o
 > `/health` diz exatamente o que falta (MVP-036). Um totem que se recusa a subir por falta
