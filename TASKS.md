@@ -65,7 +65,7 @@
 | MVP-040 | Autenticação por token no painel | F4 | P1 | 032 | ✅ Concluída |
 | MVP-041 | Fontes auto-hospedadas | F5 | P0 | 003 | ✅ Concluída |
 | MVP-042 | `tokens.css` e `base.css` | F5 | P0 | 003 | ✅ Concluída |
-| MVP-043 | Componente `<Sym>` (ícones) | F5 | P0 | 041, 042 | Pendente |
+| MVP-043 | Componente `<Sym>` (ícones) | F5 | P0 | 041, 042 | ✅ Concluída |
 | MVP-044 | Componentes `<Wordmark>` e `<StatusPill>` | F5 | P0 | 042, 043 | Pendente |
 | MVP-045 | Componente `<Choice>` | F5 | P0 | 042, 043 | Pendente |
 | MVP-046 | Componente `<Panic>` com pressionar-e-segurar | F5 | P0 | 042, 043 | Pendente |
@@ -1337,13 +1337,42 @@
 
 ### MVP-043 — Componente `<Sym>` (ícones)
 - **Descrição:** Wrapper de Material Symbols Rounded com os tamanhos do POTO.
-- **Prioridade:** P0 · **Depende de:** 041, 042 · **Status:** Pendente
-- **Arquivos:** `frontend/src/componentes/Sym.tsx`
+- **Prioridade:** P0 · **Depende de:** 041, 042 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/componentes/Sym.tsx`, `frontend/src/estilos/fontes.css`
 - **Critérios de aceitação:**
   - Tamanhos `xs:18 · sm:22 · md:28 · lg:40 · xl:56`
   - Glifos: `stethoscope`, `shield`, `female`, `info`, `emergency`, `check`, `arrow_back`
   - `aria-hidden="true"` (o rótulo textual carrega o significado)
-- **Como validar:** renderizar os 4 ícones das trilhas e conferir contra `Tela-Totem.png`
+- **Como validar:** conferido contra `../poto-pitch/capturas-de-tela/Tela-Totem.png` —
+  `stethoscope`, `shield` e `female` em ferrugem, `info` em `--muted`, `emergency` no
+  pânico
+
+> **As 7 ligaduras foram verificadas dentro do arquivo de 2,3 KB**, não assumidas. A fonte
+> é servida subsetada por nome (MVP-041), e se um glifo faltasse o nome apareceria
+> **escrito na tela** em vez do desenho — Material Symbols funciona por ligadura. A
+> inspeção (com `fontTools`, num venv descartável) mostrou 30 glifos: 7 ícones, as 21
+> letras usadas nos nomes, `space` e `.notdef`; e as 7 ligaduras mapeando para
+> `uniE5C4`/`uniE5CA`/`uniE1EB`/`uniE590`/`uniE88E`/`uniE75B`/`uniF805`.
+>
+> Na primeira tentativa a verificação disse "0 ligaduras" e quase aceitei que o subset as
+> tinha descartado. Era erro meu: o GSUB usa `LookupType 7` — substituição de **extensão**
+> — e a tabela real está dentro de `ExtSubTable`, que eu não desembrulhava.
+>
+> **O tipo `GlifoSym` enumera os glifos de propósito**, em vez de aceitar `string`: pedir
+> um ícone fora do subset é um erro silencioso em tempo de execução (o nome renderiza como
+> texto), e o tipo o transforma em erro de compilação. O acoplamento com a lista de
+> `icon_names=` está documentado nos dois arquivos.
+>
+> `aria-hidden` sem exceção, e não `aria-label`: quem carrega o significado é o rótulo
+> textual ao lado. Um label aqui faria o leitor de tela anunciar a mesma coisa duas vezes.
+>
+> Duas armadilhas de ligadura tratadas no estilo inline: `text-transform: none` — um
+> `uppercase` herdado de rótulo em caixa-alta transformaria `shield` em `SHIELD`, que não é
+> ligadura nenhuma e viraria a palavra na tela — e `letter-spacing: normal`, que pela mesma
+> razão não pode herdar tracking.
+>
+> `opsz` acompanha o tamanho em vez de ficar fixo: os glifos são desenhados numa grade
+> óptica, e um ícone de 56px com a espessura de traço de 18px fica frágil.
 
 ### MVP-044 — `<Wordmark>` e `<StatusPill>`
 - **Descrição:** Marca e indicador de conectividade do header.

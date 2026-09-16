@@ -15,7 +15,14 @@
  * navegador baixaria os dois arquivos sempre, em vez de escolher.
  *
  * Total: 164 KB. O Material Symbols é servido subsetado pelos sete glifos que
- * o `<Sym>` usa (`icon_names=`), o que o reduz de 363 KB para 2,3 KB.
+ * o `<Sym>` usa (`icon_names=`), o que o reduz de 363 KB para 2,3 KB:
+ *
+ *   arrow_back, check, emergency, female, info, shield, stethoscope
+ *
+ * **Esta lista é acoplada ao tipo `GlifoSym` em `componentes/Sym.tsx`.** Um
+ * glifo acrescentado lá sem ser acrescentado aqui não existe no arquivo, e
+ * Material Symbols funciona por ligadura: o nome do glifo apareceria **escrito
+ * na tela** em vez do desenho. Ao mexer em uma das duas, mexer na outra.
  *
  * O domínio do CDN não é citado em lugar nenhum de propósito: a validação desta
  * task é um `grep` por ele, e um comentário que o mencionasse tornaria o grep
