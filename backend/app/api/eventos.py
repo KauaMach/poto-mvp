@@ -46,6 +46,7 @@ from ..models import (
     PanicoOut,
     StatusChamado,
     TipoOcorrencia,
+    para_painel,
 )
 from ..triagem import merge_acionamento, rotear, triar
 from ..triagem.roteador import Roteamento
@@ -76,7 +77,7 @@ async def acionar(evento: EventoIn, tarefas: BackgroundTasks) -> EventoOut:
     # Antes da notificação, de propósito: a central acende na hora, sem esperar
     # o webhook. O `broadcast` nunca levanta (MVP-027), então não há caminho em
     # que um painel morto impeça o acionamento de prosseguir.
-    await hub.broadcast("novo_chamado", chamado)
+    await hub.broadcast("novo_chamado", para_painel(chamado))
 
     # Em segundo plano: a resposta precisa chegar em menos de 2 s e o webhook
     # tem teto de 10. Quem está no totem não pode ficar olhando uma tela parada
@@ -181,7 +182,7 @@ async def _notificar(chamado: dict, canal: str) -> None:
             # A central vê a mudança ao vivo: sem isto, um chamado cuja
             # notificação falhou ficaria parado em "roteado" no painel, e o
             # operador não saberia que precisa ligar por fora.
-            await hub.broadcast("atualizado", atualizado)
+            await hub.broadcast("atualizado", para_painel(atualizado))
     except Exception:
         logger.exception("%s: erro ao notificar em segundo plano", chamado["chamado_id"])
 
@@ -229,7 +230,7 @@ async def panico(evento: PanicoIn) -> PanicoOut:
         # precisa saber o que já aconteceu.
         return _resposta_panico(chamado, _resultados_gravados(chamado), duplicado=True)
 
-    await hub.broadcast("novo_chamado", chamado)
+    await hub.broadcast("novo_chamado", para_painel(chamado))
     resultados = await _acionar_em_paralelo(chamado)
 
     return _resposta_panico(chamado, resultados)

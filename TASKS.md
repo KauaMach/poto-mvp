@@ -55,7 +55,7 @@
 | MVP-030 | `POST /eventos` | F4 | P0 | 024, 027, 028 | ✅ Concluída |
 | MVP-031 | `POST /panico` | F4 | P0 | 030 | ✅ Concluída |
 | MVP-032 | `GET /chamados` e `GET /chamados/{id}` | F4 | P0 | 016 | ✅ Concluída |
-| MVP-033 | `POST /chamados/{id}/ack` e `PATCH` | F4 | P0 | 016, 027 | Pendente |
+| MVP-033 | `POST /chamados/{id}/ack` e `PATCH` | F4 | P0 | 016, 027 | ✅ Concluída |
 | MVP-034 | `POST /chamados/{id}/escalonar` | F4 | P0 | 028, 032 | Pendente |
 | MVP-035 | `WS /ws` | F4 | P0 | 027 | Pendente |
 | MVP-036 | `GET /health` honesto | F4 | P0 | 024, 028 | Pendente |
@@ -933,13 +933,47 @@
 
 ### MVP-033 — `POST /chamados/{id}/ack` e `PATCH`
 - **Descrição:** Operador reconhece e movimenta o chamado.
-- **Prioridade:** P0 · **Depende de:** 016, 027 · **Status:** Pendente
-- **Arquivos:** `backend/app/api/chamados.py`
+- **Prioridade:** P0 · **Depende de:** 016, 027 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/api/chamados.py`, `backend/app/api/eventos.py`,
+  `backend/app/models.py`, `backend/tests/test_api_chamados.py`
 - **Critérios de aceitação:**
   - `ack` grava `acked_at`, muda para `reconhecido` e faz broadcast `atualizado`
   - `PATCH` aceita `status` e `observacao`, registrando em `estado_log`
   - Ambos devolvem o chamado atualizado
-- **Como validar:** `uv run pytest tests/test_api_chamados.py`
+- **Como validar:** `uv run pytest tests/test_api_chamados.py` — 75 testes no arquivo
+  (33 desta task)
+
+> **Não há máquina de estados restringindo as transições, e isso é decisão, não
+> esquecimento.** A regra que protege o sistema — nada rebaixa a proteção já concedida —
+> vale para a *inferência automática*, não para o julgamento humano. O operador precisa
+> poder cancelar um trote, encerrar um chamado resolvido por telefone ou reabrir um que
+> voltou; uma tabela de transições permitidas travaria alguém no meio de uma emergência
+> por um caso que ninguém previu. O que garante responsabilidade é o rastro, não a
+> proibição: `estado_log` é append-only por gatilho de banco (MVP-015), e a MVP-040
+> acrescenta a credencial que diz *quem* mexeu.
+>
+> **ACK vale para pânico.** `alerta_ativo` não fecha *sozinho* — mas ACK não é sozinho,
+> é a central dizendo "recebi", o que a tela do totem mostra como *"Central recebeu"*
+> (ARCHITECTURE.md §7 F2). Dois operadores clicando devolve 200 e não reescreve o
+> `acked_at` original, de onde sai a métrica de tempo até o reconhecimento.
+>
+> **Aproveitada a oportunidade para unificar o formato do WebSocket com o do REST.** Os
+> `broadcast` de `/eventos` e `/panico` mandavam a linha crua do SQLite — com `id`,
+> `evento_id` e `triagem_json` — enquanto `GET /chamados` manda `ChamadoOut`. Como esta
+> task acrescentava dois pontos de broadcast, os cinco passaram a usar
+> `models.para_painel()`. Sem isso o painel teria que lidar com dois formatos para a
+> mesma coisa, e o tipo declarado no frontend mentiria sobre um deles (custo que
+> apareceria só na Fase 8). De quebra, o payload do WebSocket herda a lista de campos
+> permitidos — é a rota com mais chance de ficar sem autenticação se a MVP-040 atrasar.
+>
+> Um teste meu falhou e estava errado: comparei o resultado de um `PATCH` vazio com o
+> `status` da resposta de `/eventos`, que nasce defasada de propósito (`roteado`, antes
+> da notificação em segundo plano). O no-op corretamente devolve o estado atual.
+>
+> **Nota de cobertura:** `test_gravidade_nunca_muda_por_acao_do_operador` é protegido por
+> **três** camadas independentes — o contrato não declara o campo, o endpoint não o
+> repassa e `db.atualizar_chamado` não o aceita. Quebrar uma ou duas não falha teste
+> nenhum; só as três juntas. Não remover nenhuma acreditando que as outras cobrem.
 
 ### MVP-034 — `POST /chamados/{id}/escalonar`
 - **Descrição:** Acionamento manual de autoridade do estado, sem encerrar o alerta.

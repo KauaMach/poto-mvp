@@ -1,8 +1,8 @@
-"""Leitura do painel da central: `GET /chamados` e `GET /chamados/{id}`.
+"""Rotas da central: leitura dos chamados e as ações do operador.
 
 O lado oposto do acionamento. Enquanto `/eventos` e `/panico` são abertos e
-escrevem, estas rotas são de leitura e pertencem à central — exigirão
-`X-POTO-Token` (MVP-040).
+escrevem sozinhos, estas rotas pertencem à central — exigirão `X-POTO-Token`
+(MVP-040).
 
 **É a fronteira mais sensível da API.** O que sai daqui inclui o relato de quem
 pediu ajuda, o histórico de quem foi acionado e a trilha original de cada
@@ -20,14 +20,17 @@ from fastapi import APIRouter, HTTPException
 
 from .. import config, db
 from ..canais.log import mascarar
+from ..hub import hub
 from ..models import (
     ChamadoDetalhe,
     ChamadoOut,
+    ChamadoUpdate,
     EstadoOut,
     Gravidade,
     NotificacaoOut,
     StatusChamado,
     TipoOcorrencia,
+    para_painel,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,3 +108,69 @@ def _triagem(chamado: dict) -> dict | None:
         logger.warning("%s: triagem_json ilegível", chamado["chamado_id"])
         return None
     return decodificado if isinstance(decodificado, dict) else None
+
+
+# ===========================================================================
+# Ações do operador
+# ===========================================================================
+#
+# As duas primeiras rotas em que um humano move um chamado. Nenhuma delas
+# valida transições de estado, e isso é decisão, não esquecimento — ver a nota
+# em `atualizar`.
+
+
+@router.post("/chamados/{chamado_id}/ack", response_model=ChamadoOut)
+async def reconhecer(chamado_id: str) -> ChamadoOut:
+    """O operador assume o chamado: para o relógio do SLA.
+
+    Vale também para um pânico. `alerta_ativo` não fecha **sozinho** — mas ACK
+    não é sozinho, é a central dizendo "recebi". É o que a tela do totem mostra
+    como *"Central recebeu"* (ARCHITECTURE.md §7 F2).
+
+    Dois operadores clicando não é erro: o segundo ACK devolve 200 e não
+    reescreve o `acked_at` original (`db.ack_chamado`), de onde sai a métrica de
+    tempo até o reconhecimento.
+    """
+    chamado = db.ack_chamado(chamado_id)
+    if chamado is None:
+        raise HTTPException(status_code=404, detail="chamado não encontrado")
+
+    await _avisar(chamado)
+    return ChamadoOut.model_validate(chamado)
+
+
+@router.patch("/chamados/{chamado_id}", response_model=ChamadoOut)
+async def atualizar(chamado_id: str, mudanca: ChamadoUpdate) -> ChamadoOut:
+    """Muda estado e/ou observação.
+
+    **Não há máquina de estados restringindo as transições, de propósito.** A
+    regra que protege o sistema — nada rebaixa a proteção já concedida — vale
+    para a *inferência automática*, não para o julgamento humano. Um operador
+    precisa poder cancelar um trote, encerrar um chamado resolvido por telefone
+    ou reabrir um que voltou, e uma tabela de transições permitidas acabaria
+    travando alguém no meio de uma emergência por um caso que ninguém previu.
+
+    O que garante a responsabilidade é o rastro, não a proibição: `estado_log`
+    é append-only por gatilho de banco (MVP-015), então toda movimentação fica
+    registrada. A MVP-040 acrescenta a credencial que diz *quem* mexeu.
+
+    Corpo vazio é no-op válido: devolve o chamado como está.
+    """
+    chamado = db.atualizar_chamado(
+        chamado_id, status=mudanca.status, observacao=mudanca.observacao
+    )
+    if chamado is None:
+        raise HTTPException(status_code=404, detail="chamado não encontrado")
+
+    await _avisar(chamado)
+    return ChamadoOut.model_validate(chamado)
+
+
+async def _avisar(chamado: dict) -> None:
+    """Transmite o chamado atualizado para os painéis conectados.
+
+    Sempre, mesmo quando nada mudou de fato. Um `atualizado` repetido é inócuo
+    para um painel que renderiza estado, e dá nova chance a quem tinha acabado
+    de reconectar e perdeu o anterior.
+    """
+    await hub.broadcast("atualizado", para_painel(chamado))

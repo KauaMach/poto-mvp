@@ -272,6 +272,22 @@ class ChamadoDetalhe(ChamadoOut):
     estados: list[EstadoOut] = Field(default_factory=list)
 
 
+def para_painel(chamado: dict) -> dict:
+    """Projeta um chamado do banco no formato que o painel recebe.
+
+    Existe para que **o WebSocket e o REST falem a mesma língua**. Sem isto,
+    `broadcast("novo_chamado", ...)` mandaria a linha crua do SQLite — com
+    `id`, `evento_id` e `triagem_json` — enquanto `GET /chamados` manda
+    `ChamadoOut`. O painel teria que lidar com dois formatos para a mesma
+    coisa, e o tipo declarado no frontend mentiria sobre um dos dois.
+
+    De quebra, o payload do WebSocket herda a mesma lista de campos
+    permitidos: é a rota com mais chance de ficar sem autenticação se a
+    MVP-040 atrasar.
+    """
+    return ChamadoOut.model_validate(chamado).model_dump(mode="json")
+
+
 class ChamadoUpdate(BaseModel):
     """Atualização parcial pelo operador da central."""
 

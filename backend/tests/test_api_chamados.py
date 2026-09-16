@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import config, db
+from app.hub import hub as hub_global
 from app.main import criar_app
 from app.models import Gravidade, StatusChamado, TipoOcorrencia
 
@@ -436,3 +437,360 @@ def test_muitos_chamados_respeitam_o_limite(cliente):
 
     assert len(lista) == 5
     assert len(cliente.get(LISTA).json()) <= db.LIMITE_LISTAGEM
+
+
+# ===========================================================================
+# Ações do operador: ack e PATCH
+# ===========================================================================
+
+
+class PainelFalso:
+    def __init__(self, quebrado: bool = False):
+        self.quebrado = quebrado
+        self.eventos: list[tuple[str, dict]] = []
+
+    async def accept(self) -> None:
+        pass
+
+    async def send_json(self, mensagem: dict) -> None:
+        if self.quebrado:
+            raise ConnectionResetError("painel morto")
+        self.eventos.append((mensagem["evento"], mensagem["dados"]))
+
+    def nomes(self) -> list[str]:
+        return [nome for nome, _ in self.eventos]
+
+    def ultimo(self, evento: str) -> dict:
+        return [d for n, d in self.eventos if n == evento][-1]
+
+
+@pytest.fixture(autouse=True)
+def hub_limpo():
+    yield
+    hub_global._clientes.clear()
+
+
+@pytest.fixture
+async def painel():
+    p = PainelFalso()
+    await hub_global.connect(p)
+    return p
+
+
+# --- ACK --------------------------------------------------------------------
+
+
+def test_ack_muda_para_reconhecido(cliente):
+    criado = acionar(cliente)
+
+    r = cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+
+    assert r.status_code == 200
+    assert r.json()["status"] == StatusChamado.reconhecido
+
+
+def test_ack_grava_o_horario(cliente):
+    """É de `acked_at` que sai a métrica de tempo até o reconhecimento."""
+    criado = acionar(cliente)
+
+    r = cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+
+    assert r.json()["acked_at"] is not None
+
+
+def test_ack_registra_a_transicao(cliente):
+    criado = acionar(cliente)
+
+    cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+
+    estados = db.listar_estados(criado["chamado_id"])
+    assert estados[-1] == {
+        "de": StatusChamado.notificado,
+        "para": StatusChamado.reconhecido,
+        "created_at": estados[-1]["created_at"],
+    }
+
+
+def test_ack_de_panico_e_central_recebeu(cliente):
+    """`alerta_ativo` não fecha **sozinho** — mas ACK não é sozinho, é a central
+    dizendo "recebi". É o que a tela do totem mostra como "Central recebeu"."""
+    criado = entrar_em_panico(cliente)
+    assert criado["status"] == StatusChamado.alerta_ativo
+
+    r = cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+
+    assert r.json()["status"] == StatusChamado.reconhecido
+
+
+def test_segundo_ack_nao_reescreve_o_horario(cliente):
+    """Dois operadores clicando não é erro. Sobrescrever o `acked_at` original
+    mascararia uma demora real."""
+    criado = acionar(cliente)
+
+    primeiro = cliente.post(f"{LISTA}/{criado['chamado_id']}/ack").json()
+    segundo = cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+
+    assert segundo.status_code == 200
+    assert segundo.json()["acked_at"] == primeiro["acked_at"]
+
+
+def test_segundo_ack_nao_duplica_a_transicao(cliente):
+    """`estado_log` registra transições, não toques."""
+    criado = acionar(cliente)
+
+    cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+    cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+
+    reconhecimentos = [
+        e
+        for e in db.listar_estados(criado["chamado_id"])
+        if e["para"] == StatusChamado.reconhecido
+    ]
+    assert len(reconhecimentos) == 1
+
+
+def test_ack_de_chamado_inexistente_e_404(cliente):
+    assert cliente.post(f"{LISTA}/CALL-2026-999999/ack").status_code == 404
+
+
+async def test_ack_avisa_o_painel(cliente, painel):
+    criado = acionar(cliente)
+
+    cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+
+    assert painel.ultimo("atualizado")["status"] == StatusChamado.reconhecido
+
+
+async def test_painel_morto_nao_impede_o_ack(cliente):
+    criado = acionar(cliente)
+    await hub_global.connect(PainelFalso(quebrado=True))
+
+    r = cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+
+    assert r.status_code == 200
+    assert db.obter_chamado(criado["chamado_id"])["status"] == (
+        StatusChamado.reconhecido
+    )
+
+
+# --- PATCH ------------------------------------------------------------------
+
+
+def test_patch_muda_o_status(cliente):
+    criado = acionar(cliente)
+
+    r = cliente.patch(
+        f"{LISTA}/{criado['chamado_id']}", json={"status": "em_atendimento"}
+    )
+
+    assert r.status_code == 200
+    assert r.json()["status"] == StatusChamado.em_atendimento
+
+
+def test_patch_grava_a_observacao(cliente):
+    criado = acionar(cliente)
+
+    r = cliente.patch(
+        f"{LISTA}/{criado['chamado_id']}", json={"observacao": "ligou, ninguém atendeu"}
+    )
+
+    assert r.json()["observacao"] == "ligou, ninguém atendeu"
+
+
+def test_patch_aceita_os_dois_campos_juntos(cliente):
+    criado = acionar(cliente)
+
+    r = cliente.patch(
+        f"{LISTA}/{criado['chamado_id']}",
+        json={"status": "encerrado", "observacao": "resolvido no local"},
+    )
+
+    assert r.json()["status"] == StatusChamado.encerrado
+    assert r.json()["observacao"] == "resolvido no local"
+
+
+def test_patch_registra_a_transicao(cliente):
+    criado = acionar(cliente)
+
+    cliente.patch(f"{LISTA}/{criado['chamado_id']}", json={"status": "em_atendimento"})
+
+    assert db.listar_estados(criado["chamado_id"])[-1]["para"] == (
+        StatusChamado.em_atendimento
+    )
+
+
+def test_patch_so_de_observacao_nao_gera_transicao(cliente):
+    """Anotar não é movimentar. `estado_log` é a história dos estados."""
+    criado = acionar(cliente)
+    antes = len(db.listar_estados(criado["chamado_id"]))
+
+    cliente.patch(f"{LISTA}/{criado['chamado_id']}", json={"observacao": "anotação"})
+
+    assert len(db.listar_estados(criado["chamado_id"])) == antes
+
+
+def test_patch_com_o_mesmo_status_nao_duplica(cliente):
+    criado = acionar(cliente)
+    antes = len(db.listar_estados(criado["chamado_id"]))
+
+    cliente.patch(f"{LISTA}/{criado['chamado_id']}", json={"status": "notificado"})
+
+    assert len(db.listar_estados(criado["chamado_id"])) == antes
+
+
+def test_patch_vazio_e_no_op(cliente):
+    """Corpo vazio é PATCH válido: devolve o chamado como está.
+
+    A comparação é contra o estado **no banco**, não contra a resposta de
+    `/eventos`: aquela é montada antes da notificação em segundo plano
+    (MVP-030), então já nasce defasada de propósito.
+    """
+    criado = acionar(cliente)
+    antes = db.obter_chamado(criado["chamado_id"])
+    estados_antes = db.listar_estados(criado["chamado_id"])
+
+    r = cliente.patch(f"{LISTA}/{criado['chamado_id']}", json={})
+
+    assert r.status_code == 200
+    assert r.json()["status"] == antes["status"]
+    assert r.json()["observacao"] == antes["observacao"]
+    assert db.listar_estados(criado["chamado_id"]) == estados_antes
+
+
+@pytest.mark.parametrize("status", ["resolvido", "RECONHECIDO", "", "ack"])
+def test_patch_com_status_invalido_e_422(cliente, status):
+    criado = acionar(cliente)
+    r = cliente.patch(f"{LISTA}/{criado['chamado_id']}", json={"status": status})
+    assert r.status_code == 422
+
+
+def test_patch_com_observacao_longa_demais_e_422(cliente):
+    criado = acionar(cliente)
+    r = cliente.patch(f"{LISTA}/{criado['chamado_id']}", json={"observacao": "a" * 2001})
+    assert r.status_code == 422
+
+
+def test_patch_de_chamado_inexistente_e_404(cliente):
+    r = cliente.patch(f"{LISTA}/CALL-2026-999999", json={"status": "encerrado"})
+    assert r.status_code == 404
+
+
+async def test_patch_avisa_o_painel(cliente, painel):
+    criado = acionar(cliente)
+
+    cliente.patch(f"{LISTA}/{criado['chamado_id']}", json={"status": "encerrado"})
+
+    assert painel.ultimo("atualizado")["status"] == StatusChamado.encerrado
+
+
+# --- Julgamento humano não é restringido ------------------------------------
+
+
+@pytest.mark.parametrize(
+    "destino",
+    [
+        StatusChamado.cancelado,
+        StatusChamado.encerrado,
+        StatusChamado.alerta_ativo,
+        StatusChamado.recebido,
+    ],
+)
+def test_operador_pode_mover_para_qualquer_estado(cliente, destino):
+    """**Não há máquina de estados, de propósito.**
+
+    A regra que protege o sistema — nada rebaixa a proteção já concedida — vale
+    para a *inferência automática*, não para o julgamento humano. O operador
+    precisa poder cancelar um trote, encerrar um chamado resolvido por telefone
+    ou reabrir um que voltou; uma tabela de transições permitidas travaria
+    alguém no meio de uma emergência por um caso que ninguém previu.
+
+    O que garante responsabilidade é o rastro, não a proibição.
+    """
+    criado = entrar_em_panico(cliente)
+
+    r = cliente.patch(f"{LISTA}/{criado['chamado_id']}", json={"status": destino})
+
+    assert r.status_code == 200
+    assert r.json()["status"] == destino
+
+
+def test_toda_movimentacao_fica_no_rastro(cliente):
+    """A contrapartida de não restringir: `estado_log` é append-only por gatilho
+    de banco (MVP-015), então o caminho inteiro é reconstruível."""
+    criado = entrar_em_panico(cliente)
+    cid = criado["chamado_id"]
+
+    cliente.post(f"{LISTA}/{cid}/ack")
+    cliente.patch(f"{LISTA}/{cid}", json={"status": "em_atendimento"})
+    cliente.patch(f"{LISTA}/{cid}", json={"status": "encerrado"})
+
+    assert [e["para"] for e in db.listar_estados(cid)] == [
+        StatusChamado.alerta_ativo,
+        StatusChamado.reconhecido,
+        StatusChamado.em_atendimento,
+        StatusChamado.encerrado,
+    ]
+
+
+def test_gravidade_nunca_muda_por_acao_do_operador(cliente):
+    """O `ChamadoUpdate` não tem campo de gravidade, e é intencional: o
+    encaminhamento foi decidido pelo merge protetivo. Mover o estado é
+    trabalho do operador; redefinir o risco não."""
+    criado = acionar(cliente, tipo_ocorrencia="seguranca")
+
+    r = cliente.patch(
+        f"{LISTA}/{criado['chamado_id']}",
+        json={"status": "encerrado", "gravidade": "orientacao"},
+    )
+
+    assert r.json()["gravidade"] == Gravidade.risco_imediato
+    assert db.obter_chamado(criado["chamado_id"])["gravidade"] == (
+        Gravidade.risco_imediato
+    )
+
+
+# ===========================================================================
+# O WebSocket e o REST falam a mesma língua
+# ===========================================================================
+
+
+async def test_payload_do_broadcast_tem_o_formato_do_rest(cliente, painel):
+    """A propriedade que `para_painel()` existe para garantir.
+
+    Sem ela o `broadcast` mandaria a linha crua do SQLite — com `id`,
+    `evento_id` e `triagem_json` — enquanto `GET /chamados` manda `ChamadoOut`.
+    O painel teria que lidar com dois formatos para a mesma coisa, e o tipo
+    declarado no frontend mentiria sobre um dos dois.
+    """
+    criado = acionar(cliente, texto_livre=RELATO)
+
+    cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+
+    por_ws = painel.ultimo("atualizado")
+    por_rest = cliente.get(f"{LISTA}").json()[0]
+    assert por_ws == por_rest
+
+
+async def test_broadcast_nao_carrega_campos_internos(cliente, painel):
+    """De quebra, o payload do WebSocket herda a lista de campos permitidos — é
+    a rota com mais chance de ficar sem autenticação se a MVP-040 atrasar."""
+    acionar(cliente, texto_livre=RELATO)
+
+    novo = painel.ultimo("novo_chamado")
+
+    assert set(novo) == CAMPOS_DA_LISTA
+
+
+async def test_broadcast_de_novo_chamado_e_de_atualizado_tem_o_mesmo_formato(
+    cliente, painel
+):
+    criado = acionar(cliente)
+
+    cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+
+    assert set(painel.ultimo("novo_chamado")) == set(painel.ultimo("atualizado"))
+
+
+async def test_broadcast_do_panico_tambem(cliente, painel):
+    entrar_em_panico(cliente)
+    assert set(painel.ultimo("novo_chamado")) == CAMPOS_DA_LISTA
