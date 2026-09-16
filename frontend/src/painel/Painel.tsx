@@ -19,6 +19,8 @@ import { listarChamados, obterConfig } from "../comum/api";
 import type { Chamado, ConfigPublica, EventoWS } from "../comum/tipos";
 import { useEventosWS } from "../comum/useEventosWS";
 import { Wordmark } from "../componentes/Wordmark";
+import { BarraFiltros } from "./BarraFiltros";
+import { aplicarFiltros, FILTROS_VAZIOS, temFiltro, type Filtros } from "./filtros";
 import { IndicadorTempoReal } from "./IndicadorTempoReal";
 import { ListaChamados } from "./ListaChamados";
 
@@ -31,6 +33,7 @@ export function Painel() {
   const [chamados, setChamados] = useState<Chamado[]>([]);
   const [config, setConfig] = useState<ConfigPublica | null>(null);
   const [carga, setCarga] = useState<Carga>({ estado: "carregando" });
+  const [filtros, setFiltros] = useState<Filtros>(FILTROS_VAZIOS);
 
   /* Insere ou substitui **no lugar**, indexando por `chamado_id`.
    *
@@ -125,11 +128,20 @@ export function Painel() {
         )}
 
         {carga.estado === "pronto" && (
-          <ListaChamados
-            chamados={chamados}
-            onMudou={aplicar}
-            sla={config?.sla}
-          />
+          <>
+            <BarraFiltros
+              chamados={chamados}
+              filtros={filtros}
+              onMudar={setFiltros}
+              onLimpar={() => setFiltros(FILTROS_VAZIOS)}
+            />
+            <ListaChamados
+              chamados={aplicarFiltros(chamados, filtros)}
+              onMudou={aplicar}
+              sla={config?.sla}
+              filtrado={temFiltro(filtros)}
+            />
+          </>
         )}
       </main>
     </div>

@@ -88,7 +88,7 @@
 | MVP-062 | WebSocket em tempo real no painel | F8 | P0 | 035, 060 | ✅ Concluída |
 | MVP-063 | ACK e mudança de estado | F8 | P0 | 033, 061 | ✅ Concluída |
 | MVP-064 | Contador de SLA ao vivo | F8 | P0 | 037, 061 | ✅ Concluída |
-| MVP-065 | Filtros e busca | F8 | P1 | 060 | Pendente |
+| MVP-065 | Filtros e busca | F8 | P1 | 060 | ✅ Concluída |
 | MVP-073 | Detecção de dispositivos + `GET /dispositivos` | F8b | P0 | 026 | Pendente |
 | MVP-074 | Captura de vídeo (picamera2 / V4L2) | F8b | P0 | 073 | Pendente |
 | MVP-077 | **Sessão de mídia com auditoria** | F8b | P0 | 073, 017 | Pendente |
@@ -2319,13 +2319,44 @@
 
 ### MVP-065 — Filtros e busca
 - **Descrição:** Encontrar um chamado entre muitos.
-- **Prioridade:** P1 · **Depende de:** 060 · **Status:** Pendente
-- **Arquivos:** `frontend/src/painel/Painel.tsx`
+- **Prioridade:** P1 · **Depende de:** 060 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/painel/{filtros.ts,BarraFiltros.tsx,Painel.tsx}`,
+  `frontend/src/estilos/painel.css`
 - **Critérios de aceitação:**
   - Filtros por gravidade e status, com contadores
   - Busca por protocolo ou totem
   - Filtros combináveis; botão de limpar
-- **Como validar:** com 20 chamados semeados, filtrar e conferir
+- **Como validar:** com 20 chamados semeados, filtrar e conferir — verificado: filtro
+  simples, combinação dos três, busca por protocolo, por totem, **sem acento** e no relato
+
+> **Filtra no cliente, não no endpoint** — e o `GET /chamados` aceita filtros (MVP-032).
+> Usá-los aqui seria errado por dois motivos que se somam: o WebSocket entrega chamados
+> novos **sem passar pelo endpoint**, então um filtro de servidor os excluiria e o painel
+> mostraria um recorte congelado no momento da última busca; e filtrar 200 objetos em
+> memória é instantâneo, enquanto uma ida ao servidor por tecla digitada seria uma
+> requisição por caractere. Os filtros do endpoint seguem úteis para quem consome a API de
+> fora.
+>
+> **O recorte por situação não é o `StatusChamado` cru.** O operador pensa em "precisam de
+> mim" e "já resolvidos", não nos dez estados da máquina — oferecer os dez faria ele
+> escolher entre `notificado` e `escalonado` sem saber a diferença.
+>
+> **A busca normaliza acento.** Sem isso, procurar "seguranca" não acharia "Segurança", e
+> ninguém digita cedilha com pressa. `NFD` separa o acento do caractere e o range
+> `\u0300-\u036f` remove as marcas combinantes.
+>
+> A busca cobre o **relato**, que o critério não pede. É o caso de quem liga para a central
+> dizendo "é sobre a moça que falou do estacionamento": procurar por "estacionamento" é o
+> único caminho, porque o operador não tem o protocolo.
+>
+> **Os contadores contam a lista inteira, não a filtrada.** Eles dizem quanto existe de
+> cada tipo, e é por eles que o operador decide para onde ir — contar o que já está
+> filtrado mostraria zero em tudo que não é o filtro ativo.
+>
+> O chip ativo muda o **fundo**, não só a borda: numa barra de quatro chips a diferença de
+> borda passa batida, e `aria-pressed` diz ao leitor de tela qual recorte está aplicado. E
+> "Limpar filtros" só aparece quando há o que limpar — um botão sempre presente e sempre
+> inerte ensina o operador a ignorá-lo.
 
 ---
 

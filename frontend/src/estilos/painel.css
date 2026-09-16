@@ -302,3 +302,70 @@
   padding: var(--space-xs) var(--space-sm);
   margin-top: var(--space-xs);
 }
+
+/* --- Filtros e busca (MVP-065) -------------------------------------------- */
+
+.poto-filtros {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-lg);
+}
+
+.poto-busca input {
+  min-height: 40px;
+  min-width: 280px;
+  padding: 0 var(--space-md);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.poto-chips {
+  display: flex;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.poto-chip {
+  min-height: 40px;
+  min-width: 0;
+  padding: 0 var(--space-md);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+/* Ativo por fundo escuro, **não** só por borda: numa barra com quatro chips a
+ * diferença de borda passa batida, e o operador precisa saber de relance qual
+ * recorte está vendo. */
+.poto-chip-ativo {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+}
+
+.poto-chip-contador {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.poto-limpar {
+  min-height: 40px;
+  min-width: 0;
+  padding: 0 var(--space-sm);
+  color: var(--rust);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  text-decoration: underline;
+}
