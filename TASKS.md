@@ -25,9 +25,9 @@
 |---|---|---|---|---|---|
 | MVP-001 | Estrutura de diretórios do projeto | F1 | P0 | — | ✅ Concluída |
 | MVP-002 | Scaffold do backend (FastAPI + uv) | F1 | P0 | 001 | ✅ Concluída |
-| MVP-003 | Scaffold do frontend (React + Vite + TS) | F1 | P0 | 001 | Pendente |
+| MVP-003 | Scaffold do frontend (React + Vite + TS) | F1 | P0 | 001 | ✅ Concluída |
 | MVP-004 | `.env.example` e carregamento de config | F1 | P0 | 002 | Pendente |
-| MVP-005 | `.gitignore` | F1 | P0 | 001 | Pendente |
+| MVP-005 | `.gitignore` | F1 | P0 | 001 | ✅ Concluída |
 | MVP-006 | Lint e formatação (ruff + eslint) | F1 | P1 | 002, 003 | Pendente |
 | MVP-007 | Makefile com alvos de desenvolvimento | F1 | P0 | 002, 003 | Pendente |
 | MVP-008 | Commit inicial e push | F1 | P0 | 001–007 | Pendente |
@@ -152,14 +152,23 @@
 
 ### MVP-003 — Scaffold do frontend (React + Vite + TS)
 - **Descrição:** Inicializar a aplicação React com Vite e TypeScript, configurada para gerar build estático em `dist/`.
-- **Prioridade:** P0 · **Depende de:** 001 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 001 · **Status:** ✅ Concluída
 - **Arquivos:** `frontend/package.json`, `vite.config.ts`, `tsconfig.json`, `index.html`, `src/main.tsx`
 - **Critérios de aceitação:**
   - `npm run dev` sobe em `:5173` com proxy de `/api` para `:8000`
   - `npm run build` gera `dist/index.html` **com os assets referenciados**
-  - `base: "./"` no `vite.config.ts` (caminhos relativos, para o backend servir de qualquer prefixo)
+  - `base: "/"` no `vite.config.ts` — ver nota abaixo (o critério original pedia `"./"`)
   - Nenhuma dependência de UI kit (sem MUI, Chakra, Tailwind) — a identidade é própria
 - **Como validar:** `cd frontend && npm run build && ls dist/index.html dist/assets/`
+
+> **Correção aplicada durante a execução.** O critério original pedia `base: "./"`, com a
+> justificativa de "servir de qualquer prefixo". Servimos sempre da **raiz**, e nesse
+> cenário a base relativa é pior: na rota `/painel/` (com barra final) os assets
+> resolveriam para `/painel/assets/…` e a página quebraria. Com `base: "/"` o caminho é
+> `/assets/…` em qualquer rota — verificado em `/`, `/painel` e `/painel/`.
+>
+> Também trocado `eslint` por **`oxlint`**, que é o linter que o scaffold atual do Vite
+> traz por padrão (mais rápido, escrito em Rust). Isso antecipa parte da MVP-006.
 
 ### MVP-004 — `.env.example` e carregamento de config
 - **Descrição:** Definir todas as variáveis de ambiente com defaults seguros e um módulo `config.py` que as lê.
@@ -173,7 +182,7 @@
 
 ### MVP-005 — `.gitignore`
 - **Descrição:** Ignorar artefatos de build, venv, banco local e segredos.
-- **Prioridade:** P0 · **Depende de:** 001 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 001 · **Status:** ✅ Concluída
 - **Arquivos:** `.gitignore`
 - **Critérios de aceitação:**
   - Ignora `backend/.venv/`, `__pycache__/`, `*.pyc`, `backend/poto.db*`, `frontend/node_modules/`, `frontend/dist/`, `.env`
