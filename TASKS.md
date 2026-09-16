@@ -30,7 +30,7 @@
 | MVP-005 | `.gitignore` | F1 | P0 | 001 | ✅ Concluída |
 | MVP-006 | Lint e formatação (ruff + oxlint) | F1 | P1 | 002, 003 | ✅ Concluída |
 | MVP-007 | Makefile com alvos de desenvolvimento | F1 | P0 | 002, 003 | ✅ Concluída |
-| MVP-008 | Commit inicial e push | F1 | P0 | 001–007 | Pendente |
+| MVP-008 | Commit inicial e push | F1 | P0 | 001–007 | ✅ Concluída |
 | MVP-009 | Enums do domínio | F2 | P0 | 002 | Pendente |
 | MVP-010 | Contratos Pydantic de entrada e saída | F2 | P0 | 009 | Pendente |
 | MVP-011 | Catálogo de canais e config de SLA | F2 | P0 | 004, 009 | Pendente |
@@ -209,13 +209,18 @@
 
 ### MVP-008 — Commit inicial e push
 - **Descrição:** Primeiro commit do scaffold no repositório `KauaMach/poto-mvp`.
-- **Prioridade:** P0 · **Depende de:** 001–007 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 001–007 · **Status:** ✅ Concluída
 - **Critérios de aceitação:**
   - `git config user.name` e `user.email` estão configurados **antes** do commit
   - O autor do commit é a identidade do desenvolvedor
   - **Nenhuma linha de atribuição a IA** na mensagem (ver `CLAUDE.md`)
   - `git push -u origin main` conclui
 - **Como validar:** `git log -1 --format='%an <%ae>%n%B'` — autor correto, sem `Co-Authored-By`
+
+> **Fase 1 validada num clone limpo do GitHub**, não só na máquina de desenvolvimento:
+> `git clone` → `make setup` → `make build` → `make lint` (exit 0) → `config.py` carrega
+> → `git status` continua vazio (nenhum artefato gerado vaza para o repositório).
+> Isso fecha o item 1 da Definition of Done do PLAN.md.
 
 ---
 
