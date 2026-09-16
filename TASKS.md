@@ -98,7 +98,7 @@
 | MVP-079 | Custo de CPU e latência na Pi | F8b | P0 | 075, 076 | Pendente |
 | MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | ✅ Concluída |
 | MVP-066b | `make deploy` e build-id verificável | F9 | P0 | 066 | ✅ Concluída |
-| MVP-067 | Unit systemd na Pi (API) | F9 | P0 | 066 | Pendente |
+| MVP-067 | Unit systemd na Pi (API) | F9 | P0 | 066 | ⚠️ Parcial |
 | MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | Pendente |
 | MVP-067c | Kiosk no Galaxy Tab A11 | F9 | P0 | 055b, 067b | Pendente |
 | ~~MVP-068~~ | ~~Daemon do botão GPIO~~ | — | **P2** | — | Fora do MVP |
@@ -2556,14 +2556,47 @@
 ### MVP-067 — Unit systemd na Pi
 - **Descrição:** Um único serviço que sobe sozinho no boot. Sem unit de kiosk (o navegador
   roda no tablet) e sem unit de GPIO (o pânico é virtual). A Pi opera **headless**.
-- **Prioridade:** P0 · **Depende de:** 066 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 066 · **Status:** ⚠️ Parcial — unit escrita e
+  validada; **o teste após reboot exige a Pi**
 - **Arquivos:** `deploy/poto-api.service`
 - **Critérios de aceitação:**
   - uvicorn **sem `--reload`**, `--host 0.0.0.0` (o tablet precisa alcançar)
   - `Restart=always`, `RestartSec=3`, `EnvironmentFile`, `After=network-online.target`
   - Funciona com a Pi sem monitor, teclado ou periférico conectado
   - `journalctl -u poto-api` mostra os logs da aplicação
-- **Como validar:** `systemctl status poto-api` após reboot, com a Pi headless
+- **Como validar:** `systemctl status poto-api` após reboot, com a Pi headless — **não
+  executado**: a Pi está inalcançável deste ambiente (ver nota). A unit foi validada com
+  `systemd-analyze verify` e as nove chaves críticas conferidas por script
+
+> **O `systemd-analyze verify` pegou um bug real.** Eu havia posto
+> `StartLimitIntervalSec` e `StartLimitBurst` em `[Service]`, e ali elas são
+> **silenciosamente ignoradas** — pertencem a `[Unit]`. O teto de reinícios não existiria,
+> e uma falha permanente (banco corrompido, porta ocupada) viraria laço infinito
+> consumindo CPU e enchendo o journal. O sintoma seria "a Pi está lenta", não "o serviço
+> está quebrado", o que manda a investigação para o lugar errado.
+>
+> **`After=network-online.target`, não `network.target`.** O segundo significa "a pilha de
+> rede subiu"; o primeiro, "há endereço configurado". Com o `network.target`, o uvicorn
+> pode tentar o bind em `0.0.0.0` antes de a interface ter IP e falhar — o `Restart=always`
+> cobriria, mas o serviço nasceria com um ciclo de falha e a indisponibilidade apareceria
+> justo no boot, que é quando ninguém está olhando.
+>
+> **`Restart=always` e não `on-failure`.** Um `systemctl stop` continua parando (o systemd
+> distingue parada manual de saída do processo), mas qualquer outra saída — inclusive
+> código 0 por um caminho inesperado — reergue. Um totem de emergência não pode ficar fora
+> do ar porque o processo decidiu terminar.
+>
+> **O `ExecStart` é o mesmo comando de `make serve`**, e isso é deliberado: dois comandos
+> diferentes divergiriam, e a divergência apareceria só na Pi.
+>
+> `EnvironmentFile` com `-` prefixado: o serviço sobe mesmo sem o `.env`. Degradado — e o
+> `/health` diz exatamente o que falta (MVP-036). Um totem que se recusa a subir por falta
+> de arquivo de configuração é pior que um que sobe avisando.
+>
+> O endurecimento é **modesto de propósito**. O serviço precisa escrever o banco, ler o
+> `dist/` e — na Fase 8b — acessar a câmera CSI e o ALSA. Um sandbox agressivo quebraria a
+> mídia de um jeito difícil de diagnosticar, e este é um totem numa rede local, não um
+> servidor exposto.
 
 ### MVP-067b — Endereçamento estável da Pi
 - **Descrição:** O tablet abre uma URL fixa; ela não pode mudar a cada reboot.

@@ -1,0 +1,93 @@
+# P.O.T.O — serviço único da Raspberry Pi (MVP-067).
+#
+# **Uma unit só.** O projeto de referência precisaria de três — API, kiosk e
+# daemon de GPIO — e cada uma é um ponto de falha que sobe em ordem incerta no
+# boot. Aqui o navegador roda no tablet (MVP-067c) e o pânico é virtual
+# (MVP-046), então a Pi opera headless: nenhum monitor, teclado ou periférico
+# conectado.
+#
+# Instalação:
+#   sudo cp deploy/poto-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now poto-api
+#
+# Logs:
+#   journalctl -u poto-api -f
+
+[Unit]
+Description=P.O.T.O — Totem de Segurança (API + aplicação)
+Documentation=https://github.com/KauaMach/poto-mvp
+
+# `network-online.target` e não só `network.target`: o segundo significa "a
+# pilha de rede subiu", o primeiro "há endereço configurado". Com o primeiro, o
+# uvicorn pode tentar o bind em 0.0.0.0 antes de a interface ter IP e falhar —
+# o `Restart=always` cobriria, mas o serviço nasceria com um ciclo de falha e
+# um minuto de indisponibilidade no boot.
+After=network-online.target
+Wants=network-online.target
+
+# Teto de reinícios: 5 tentativas em 60 s.
+#
+# Fica em [Unit] e **não** em [Service], que é onde eu o havia posto primeiro —
+# o `systemd-analyze verify` avisou que ali a chave é silenciosamente ignorada.
+# Sem o teto, uma falha permanente (banco corrompido, porta ocupada) viraria
+# laço infinito consumindo CPU e enchendo o journal, e o sintoma seria a Pi
+# lenta em vez do serviço quebrado.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=raspoto
+Group=raspoto
+WorkingDirectory=/home/raspoto/poto-mvp/backend
+
+# As variáveis vivem num arquivo, não aqui: contatos institucionais e o token
+# do painel não vão para um arquivo versionado. O `-` prefixado faz o serviço
+# subir mesmo sem ele — degradado, e o `/health` diz o que falta (MVP-036).
+EnvironmentFile=-/home/raspoto/poto-mvp/backend/.env
+
+# O MESMO comando de `make serve`. Se divergirem, a divergência aparece só na
+# Pi — e é o tipo de diferença que custa uma hora para achar.
+#
+#   --host 0.0.0.0  o tablet precisa alcançar; sem isto escuta só em localhost
+#   sem --reload    o observador de arquivos gasta CPU vigiando uma árvore que
+#                   não muda, e um toque acidental reiniciaria o serviço no
+#                   meio de um atendimento
+ExecStart=/home/raspoto/.local/bin/uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# Sempre, não `on-failure`: um `systemctl stop` continua parando o serviço
+# (systemd distingue parada manual de saída do processo), mas qualquer outra
+# saída — inclusive código 0 por algum caminho inesperado — reergue. Um totem
+# de emergência não pode ficar fora do ar porque o processo decidiu terminar.
+Restart=always
+RestartSec=3
+
+# Para o journal, que é onde `journalctl -u poto-api` lê. Sem isto o uvicorn
+# escreveria em lugar nenhum e a depuração perderia a única fonte.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=poto-api
+
+# Encerramento gracioso: o `lifespan` do FastAPI cancela o worker de SLA e
+# fecha as conexões de WebSocket (MVP-038). 10 s é folga suficiente; passado
+# isso, SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# --- Endurecimento -----------------------------------------------------------
+#
+# Modesto de propósito. O serviço precisa escrever o banco, ler o dist/ e — na
+# Fase 8b — acessar a câmera CSI e o ALSA. Um sandbox agressivo quebraria a
+# mídia de um jeito difícil de diagnosticar, e este é um totem numa rede local,
+# não um servidor exposto.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+# `ReadWritePaths` reabre só o que precisa: o banco SQLite (com WAL, são três
+# arquivos) fica no diretório do backend.
+ReadWritePaths=/home/raspoto/poto-mvp/backend
+
+[Install]
+WantedBy=multi-user.target
