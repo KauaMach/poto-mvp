@@ -78,3 +78,20 @@
    * retrato e empurra a grade para baixo do rodapé. */
   max-width: 20ch;
 }
+
+/* Aviso de falha no acionamento — MVP-051.
+ *
+ * Fica **abaixo** das trilhas, não sobre elas: a pessoa precisa poder tocar
+ * novamente sem fechar nada. Um modal aqui exigiria um toque só para
+ * descartar.
+ */
+.poto-erro {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--rust-soft);
+  border-radius: var(--r-md);
+  padding: var(--space-sm) var(--space-md);
+  text-align: center;
+  max-width: 42ch;
+}

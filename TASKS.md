@@ -73,7 +73,7 @@
 | MVP-048 | Cliente de API tipado | F6 | P0 | 010, 030 | ✅ Concluída |
 | MVP-049 | Shell do totem (header/main/footer) | F6 | P0 | 044 | ✅ Concluída |
 | MVP-050 | Tela inicial com as 4 trilhas | F6 | P0 | 045, 046, 049 | ✅ Concluída |
-| MVP-051 | Fluxo de acionamento e confirmação | F6 | P0 | 047, 048, 050 | Pendente |
+| MVP-051 | Fluxo de acionamento e confirmação | F6 | P0 | 047, 048, 050 | ✅ Concluída |
 | MVP-052 | Retorno automático à tela inicial | F6 | P0 | 051 | Pendente |
 | MVP-053 | Modo discreto | F6 | P0 | 051 | Pendente |
 | MVP-054 | Tela de alerta ativo (pânico) | F6 | P0 | 031, 051 | Pendente |
@@ -1675,15 +1675,48 @@
 
 ### MVP-051 — Fluxo de acionamento e confirmação
 - **Descrição:** Toque → POST → tela de confirmação com protocolo.
-- **Prioridade:** P0 · **Depende de:** 047, 048, 050 · **Status:** Pendente
-- **Arquivos:** `frontend/src/totem/Totem.tsx`
+- **Prioridade:** P0 · **Depende de:** 047, 048, 050 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/totem/Totem.tsx`,
+  `frontend/src/totem/telas/Confirmacao.tsx`, `frontend/src/comum/beep.ts`
 - **Critérios de aceitação:**
   - Estado de carregamento durante o POST; botões desabilitados (sem duplo toque)
   - Confirmação usa `instrucao_totem` **do backend**, não lógica do cliente
   - `feedback_sonoro` toca um beep de 660 Hz por 0,12 s
   - Erro de rede não trava a tela — cai na fila (MVP-057)
   - Do toque à confirmação em < 2 s
-- **Como validar:** acionar cada trilha e conferir o chamado no banco
+- **Como validar:** acionar cada trilha e conferir o chamado no banco — verificado com
+  respostas **reais** do backend:
+  `saude→padrao` · `seguranca→critico` · `mulher(normal)→neutral, som=false` ·
+  `ouvidoria→padrao`
+
+> **O cliente não decide nada sobre a ocorrência.** Ele coleta o toque, manda, e obedece ao
+> `instrucao_totem` que volta — mensagem, som e discrição são todos do backend. Se
+> decidisse aqui, a garantia de modo discreto passaria a depender de o frontend lembrar de
+> aplicá-la, que é exatamente a dependência que a MVP-030 tirou do cliente.
+>
+> A verificação confirmou isso na prática: `mulher` enviado como `modo: normal` volta com
+> `tela_neutra: true` e `feedback_sonoro: false`. O roteador forçou discreto.
+>
+> **`varianteDe` checa discreto ANTES de crítico**, e a ordem é a decisão mais delicada do
+> arquivo. A trilha mulher chega com gravidade alta; inverter faria um pedido discreto
+> virar uma tela vermelha anunciando emergência para quem estiver olhando por cima do
+> ombro.
+>
+> `setEstado({tela: "enviando"})` acontece **antes de qualquer `await`**: dois toques
+> rápidos gerariam dois `evento_id` distintos, e a idempotência do backend só protege
+> reenvios do **mesmo** id.
+>
+> **O beep é gerado por oscilador, não por arquivo.** Um `.mp3` é mais um recurso para
+> carregar e para faltar offline, e tem latência de decodificação — o oscilador sai no
+> mesmo quadro do toque, que é o que faz a realimentação parecer resposta e não eco. O
+> contexto de áudio é criado **uma vez**: um por beep esgotaria o limite do navegador e o
+> som pararia de sair depois de algumas dezenas de acionamentos — numa demonstração,
+> exatamente no meio. Envelope curto em vez de liga/desliga seco, senão o corte abrupto
+> produz um clique que soa como defeito.
+>
+> Erro de rede mostra aviso **abaixo** das trilhas, não num modal: a pessoa precisa poder
+> tocar novamente sem fechar nada. E um totem preso numa tela de carregamento é pior do que
+> um totem que admite a falha.
 
 ### MVP-052 — Retorno automático à tela inicial
 - **Descrição:** O totem sempre volta sozinho ao repouso.

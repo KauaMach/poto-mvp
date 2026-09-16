@@ -10,3 +10,9 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/* `webkitAudioContext` para Safari/iOS antigos — o tablet é Android, mas a
+ * interface também é aberta em celulares pessoais. */
+interface Window {
+  webkitAudioContext?: typeof AudioContext;
+}
