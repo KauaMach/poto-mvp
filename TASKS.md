@@ -45,7 +45,7 @@
 | MVP-020 | Classificador TF-IDF + LogReg | F3 | P0 | 019 | ✅ Concluída |
 | MVP-021 | Script de treino e avaliação | F3 | P0 | 020 | ✅ Concluída |
 | MVP-022 | Heurística de palavras-chave | F3 | P0 | 009 | ✅ Concluída |
-| MVP-023 | **Merge protetivo** | F3 | P0 | 012, 020, 022 | Pendente |
+| MVP-023 | **Merge protetivo** ★ | F3 | P0 | 012, 020, 022 | ✅ Concluída |
 | MVP-024 | Fachada `triar()` | F3 | P0 | 023 | Pendente |
 | MVP-025 | Suíte de regressão de segurança | F3 | P0 | 024 | Pendente |
 | MVP-026 | App FastAPI + lifespan + estático | F4 | P0 | 004, 014 | Pendente |
