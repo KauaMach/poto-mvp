@@ -92,7 +92,7 @@
 | MVP-073 | Detecção de dispositivos + `GET /dispositivos` | F8b | P0 | 026 | ✅ Concluída |
 | MVP-074 | Captura de vídeo (picamera2 / V4L2) | F8b | P0 | 073 | ✅ Concluída |
 | MVP-077 | **Sessão de mídia com auditoria** | F8b | P0 | 073, 017 | ✅ Concluída |
-| MVP-075 | Stream MJPEG | F8b | P0 | 074, 077 | Pendente |
+| MVP-075 | Stream MJPEG | F8b | P0 | 074, 077 | ✅ Concluída |
 | MVP-076 | Captura e stream de áudio (ALSA) | F8b | P0 | 073, 077 | Pendente |
 | MVP-078 | Visualização no painel | F8b | P0 | 063, 075, 076 | Pendente |
 | MVP-079 | Custo de CPU e latência na Pi | F8b | P0 | 075, 076 | Pendente |
@@ -2469,15 +2469,56 @@
 
 ### MVP-075 — Stream MJPEG
 - **Descrição:** Entregar o vídeo ao painel sem WebRTC nem biblioteca.
-- **Prioridade:** P0 · **Depende de:** 074, 077 · **Status:** Pendente
-- **Arquivos:** `backend/app/api/midia.py`
+- **Prioridade:** P0 · **Depende de:** 074, 077 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/api/midia.py`, `backend/tests/test_midia_sessao.py`
 - **Critérios de aceitação:**
   - `GET /midia/camera/{id}/stream` com `multipart/x-mixed-replace; boundary=frame`
   - Renderiza em `<img src="…">` sem nenhum JavaScript
   - Cliente desconectado encerra o gerador (sem vazar thread nem processo)
   - **Sem `sessao` válida → `403`**
   - Latência na LAN abaixo de 1 s
-- **Como validar:** abrir a URL no navegador e ver imagem ao vivo; fechar a aba e confirmar que a captura para
+- **Como validar:** abrir a URL no navegador e ver imagem ao vivo; fechar a aba e
+  confirmar que a captura para — **executado na Pi real**: 403 sem sessão, e com sessão
+  válida **55 frames JPEG completos em 6 s** (578 KB) em
+  `multipart/x-mixed-replace; boundary=frame`. Depois do desconecte, a câmera abre de outro
+  processo
+
+> **O critério "sem vazar thread nem processo" era o bug, e a Pi real o encontrou.**
+>
+> A primeira versão usava gerador **síncrono**. O Starlette o roda num threadpool, e quando
+> o cliente desconecta o gerador fica bloqueado dentro da captura sem que o Python possa
+> interrompê-lo: o `finally` **não executa** e a câmera fica presa até o processo morrer.
+> Medido: depois de um `curl` interrompido, abrir a câmera de outro processo falhava com
+> `RuntimeError: Camera __init__ sequence did not complete`.
+>
+> É exatamente a falha que eu havia documentado na MVP-074 e afirmado ter prevenido — o
+> `finally` estava escrito, só não rodava. Comentário não é garantia.
+>
+> A correção tem duas partes: gerador **assíncrono**, para o Starlette chamar `aclose()` ao
+> cancelar a resposta; e checagem explícita de `is_disconnected()` a cada frame, que encerra
+> no primeiro frame após o cliente sair em vez de esperar a falha de escrita. A captura vai
+> para um thread (`run_in_threadpool`) porque leva ~33 ms — rodá-la no event loop bloquearia
+> o servidor por um terço do tempo a 10 fps, o suficiente para atrasar um `POST /eventos`.
+> Verificado na Pi: câmera **livre** depois do desconecte.
+>
+> **A sessão é checada a cada frame**, não só na abertura. Sem isso um stream aberto no
+> minuto 9 continuaria entregando vídeo por horas, e o prazo de 10 minutos da MVP-077 seria
+> decorativo.
+>
+> Todas as recusas viram **403**, inclusive sessão inexistente: distinguir "não existe" de
+> "expirou" diria a quem tenta adivinhar se acertou o formato do token. E a recusa acontece
+> **antes** de abrir a câmera — ligá-la e só então recusar acenderia o dispositivo para quem
+> não tem autorização, sem linha de auditoria.
+>
+> `multipart/x-mixed-replace` é HTTP de 1995 e é exatamente o que serve: o navegador
+> renderiza num `<img>` **sem uma linha de JavaScript**, sem WebRTC, sem biblioteca, sem
+> negociação de codec.
+>
+> Nota de teste: os testes de entrega exercitam o **gerador diretamente**, não pelo
+> `TestClient`. Ele roda a aplicação no mesmo processo, e sair de um `iter_bytes()` não
+> sinaliza desconexão ao ASGI — um stream é infinito, então o teste **pendura**. Aconteceu,
+> e levou três tentativas para eu perceber (duas delas perdidas porque meu próprio
+> `pkill -f`/`pgrep -f` casava com a linha de comando do shell que o executava, matando-o).
 
 ### MVP-076 — Captura e stream de áudio
 - **Descrição:** Ouvir o local do totem durante um chamado.

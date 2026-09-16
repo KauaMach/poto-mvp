@@ -421,3 +421,237 @@ async def test_worker_de_sla_varre_sessoes_expiradas(cliente, monkeypatch):
         "abertura",
         "expiracao",
     ]
+
+
+# ===========================================================================
+# Stream MJPEG (MVP-075)
+# ===========================================================================
+#
+# **Os testes de entrega exercitam o gerador diretamente, não pelo
+# `TestClient`.** Duas razões, e a segunda é a que importa:
+#
+# 1. O `TestClient` roda a aplicação **no mesmo processo**, e sair de um
+#    `iter_bytes()` não sinaliza desconexão ao ASGI. Um stream é infinito por
+#    natureza, então o teste **pendura** — foi o que aconteceu na primeira
+#    versão deste arquivo, e levou três tentativas para eu perceber.
+# 2. A propriedade que importa é o *ciclo de vida do gerador*: fechar a câmera
+#    quando o cliente sai, quando a sessão expira e quando a captura falha.
+#    Isso se verifica pedindo frames ao gerador e controlando o
+#    `is_disconnected`; pelo cliente HTTP seria indireto e frágil.
+#
+# As recusas (403) continuam pelo `TestClient`: elas respondem **antes** de
+# abrir qualquer stream, então não há o que pendurar.
+
+JPEG = b"\xff\xd8" + b"x" * 40 + b"\xff\xd9"
+
+
+class RequisicaoFalsa:
+    """Requisição que se desconecta depois de N verificações."""
+
+    def __init__(self, desconecta_em: int | None = None) -> None:
+        self.desconecta_em = desconecta_em
+        self.verificacoes = 0
+
+    async def is_disconnected(self) -> bool:
+        self.verificacoes += 1
+        if self.desconecta_em is None:
+            return False
+        return self.verificacoes > self.desconecta_em
+
+
+@pytest.fixture
+def camera_falsa(monkeypatch):
+    """Câmera de mentira que conta aberturas e fechamentos.
+
+    O que se cobra não é a imagem — é o **ciclo de vida**. O bug encontrado na
+    Pi real foi exatamente aqui.
+    """
+    from app.midia import camera as mod
+
+    estado = {"abertas": 0, "fechadas": 0}
+
+    def abrir(_id):
+        estado["abertas"] += 1
+        try:
+            while True:
+                yield JPEG
+        finally:
+            estado["fechadas"] += 1
+
+    monkeypatch.setattr(mod, "abrir", abrir)
+    return estado
+
+
+# --- Recusas (pelo cliente HTTP) --------------------------------------------
+
+
+def test_stream_sem_sessao_e_403(cliente):
+    """O critério que a task manda testar explicitamente."""
+    assert cliente.get("/api/v1/midia/camera/csi:0/stream").status_code == 403
+
+
+def test_stream_com_sessao_inventada_e_403(cliente):
+    r = cliente.get("/api/v1/midia/camera/csi:0/stream?sessao=nao-existe")
+    assert r.status_code == 403
+
+
+def test_stream_com_sessao_de_outro_dispositivo_e_403(cliente):
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "alsa:2,0")
+
+    r = cliente.get(f"/api/v1/midia/camera/csi:0/stream?sessao={s.sessao_id}")
+
+    assert r.status_code == 403
+
+
+def test_stream_com_sessao_expirada_e_403(cliente):
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "csi:0")
+    s.expira_em = time.monotonic() - 1
+
+    r = cliente.get(f"/api/v1/midia/camera/csi:0/stream?sessao={s.sessao_id}")
+
+    assert r.status_code == 403
+
+
+def test_403_nao_abre_a_camera(cliente, camera_falsa):
+    """A recusa acontece **antes** da captura. Abrir e depois recusar ligaria a
+    câmera para quem não tem autorização — mesmo por um instante, e a auditoria
+    não registraria."""
+    cliente.get("/api/v1/midia/camera/csi:0/stream?sessao=xyz")
+
+    assert camera_falsa["abertas"] == 0
+
+
+def test_cabecalhos_impedem_cache(cliente, camera_falsa):
+    """Um proxy guardando frames de câmera seria inútil (a imagem muda) e
+    indesejável (a imagem é de um chamado)."""
+    from app.api import midia as api_midia
+
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "csi:0")
+    resposta = api_midia.stream_camera(RequisicaoFalsa(), "csi:0", s.sessao_id)
+
+    assert "no-store" in resposta.headers["cache-control"]
+    assert resposta.headers["x-accel-buffering"] == "no"
+    assert "multipart/x-mixed-replace" in resposta.media_type
+    assert "boundary=frame" in resposta.media_type
+
+
+# --- Entrega e ciclo de vida (pelo gerador) ---------------------------------
+
+
+async def coletar(gerador, n: int) -> bytes:
+    """Consome até `n` partes e fecha, como o navegador faria."""
+    saida = b""
+    try:
+        async for pedaco in gerador:
+            saida += pedaco
+            if saida.count(b"--frame") >= n:
+                break
+    finally:
+        await gerador.aclose()
+    return saida
+
+
+async def test_stream_entrega_partes_multipart(cliente, camera_falsa):
+    from app.api import midia as api_midia
+
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "csi:0")
+
+    corpo = await coletar(api_midia._multipart(RequisicaoFalsa(), "csi:0", s), 2)
+
+    assert corpo.count(b"--frame") >= 2
+    assert corpo.count(b"\xff\xd8") >= 2
+    assert b"Content-Type: image/jpeg" in corpo
+    assert f"Content-Length: {len(JPEG)}".encode() in corpo
+
+
+async def test_fechar_o_gerador_libera_a_camera(cliente, camera_falsa):
+    """**O bug que a Pi real revelou.**
+
+    Com gerador síncrono, o Starlette roda o stream num threadpool e o
+    desconecte deixa o gerador bloqueado dentro da captura: o `finally` não
+    executa e a câmera fica presa até o processo morrer. Verificado na Pi:
+    depois de um `curl` interrompido, abrir a câmera de outro processo falhava
+    com `RuntimeError: Camera __init__ sequence did not complete`.
+
+    Com gerador assíncrono o Starlette chama `aclose()`, e é isso que este
+    teste exerce.
+    """
+    from app.api import midia as api_midia
+
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "csi:0")
+
+    await coletar(api_midia._multipart(RequisicaoFalsa(), "csi:0", s), 1)
+
+    assert camera_falsa["abertas"] == 1
+    assert camera_falsa["fechadas"] == 1, "a câmera ficou presa"
+
+
+async def test_desconexao_do_cliente_encerra_o_stream(cliente, camera_falsa):
+    """O caminho **normal** de encerramento de um MJPEG: o operador fecha a aba.
+
+    Sem checar `is_disconnected`, o stream só pararia na próxima falha de
+    escrita — um frame depois, e com a câmera ainda rodando.
+    """
+    from app.api import midia as api_midia
+
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "csi:0")
+    requisicao = RequisicaoFalsa(desconecta_em=2)
+
+    partes = [p async for p in api_midia._multipart(requisicao, "csi:0", s)]
+
+    assert len(partes) == 2, "o stream não parou no desconecte"
+    assert camera_falsa["fechadas"] == 1
+
+
+async def test_expiracao_encerra_o_stream_em_curso(cliente, camera_falsa):
+    """A sessão é checada **a cada frame**, não só na abertura.
+
+    Sem isso, um stream aberto no minuto 9 continuaria entregando vídeo por
+    horas: o prazo de 10 minutos existe para limitar a duração, e checar uma
+    vez só o tornaria decorativo.
+    """
+    from app.api import midia as api_midia
+
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "csi:0")
+    gerador = api_midia._multipart(RequisicaoFalsa(), "csi:0", s)
+
+    primeira = await anext(gerador)
+    assert primeira.count(b"--frame") == 1
+
+    s.expira_em = time.monotonic() - 1
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(gerador)
+    assert camera_falsa["fechadas"] == 1
+
+
+async def test_falha_da_camera_no_meio_libera(cliente, monkeypatch):
+    """Câmera desconectada durante o stream. Encerrar é o certo: o `<img>` do
+    painel mostra a última imagem e o operador percebe que congelou."""
+    from app.api import midia as api_midia
+    from app.midia import camera as mod
+
+    estado = {"fechadas": 0}
+
+    def abrir(_id):
+        try:
+            yield JPEG
+            raise mod.CameraIndisponivel("cabo arrancado")
+        finally:
+            estado["fechadas"] += 1
+
+    monkeypatch.setattr(mod, "abrir", abrir)
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "csi:0")
+
+    partes = [p async for p in api_midia._multipart(RequisicaoFalsa(), "csi:0", s)]
+
+    assert len(partes) == 1
+    assert estado["fechadas"] == 1
