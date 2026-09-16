@@ -2,17 +2,22 @@
 #
 # P.O.T.O — preparação da Raspberry Pi.
 #
-# Nesta versão (MVP-067b) o script cuida do **endereçamento**: o tablet abre uma
-# URL fixa e ela não pode mudar a cada reboot. A instalação das dependências, o
-# treino do classificador e a unit systemd entram na MVP-069.
-#
-# Idempotente: rodar duas vezes não quebra nada.
+# Transforma uma Pi limpa num totem. **Idempotente**: rodar duas vezes não
+# quebra nada, e é assim que se conserta um estado meio-configurado.
 #
 #   bash deploy/install-pi.sh
 #
+# **Node NÃO é instalado.** O frontend é construído na máquina de
+# desenvolvimento e enviado pronto por `make deploy` (MVP-066b). Isso poupa
+# 133 MB e 700 arquivos na Pi, elimina uma toolchain que precisaria de
+# manutenção, e dispensa internet no momento do deploy — o rsync vai pela LAN.
+# Ver ARCHITECTURE.md D1c.
 set -euo pipefail
 
 PORTA="${POTO_PORTA:-8000}"
+# O script vive em `deploy/`; a raiz do projeto é o diretório acima.
+RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+USUARIO="$(id -un)"
 
 # --- Saída ------------------------------------------------------------------
 
@@ -37,6 +42,135 @@ else
   ok "$(tr -d '\0' < /proc/device-tree/model)"
 fi
 
+# --- Pacotes do sistema -----------------------------------------------------
+
+titulo "Pacotes do sistema"
+
+# `picamera2` vem do **apt**, não do pip: ele depende de `python3-libcamera`,
+# que é um binding C++ compilado e não existe no PyPI. Declará-lo como
+# dependência pip faria o extra `midia` falhar na Pi (ver `pyproject.toml`).
+APT_PACOTES=(avahi-daemon avahi-utils rsync python3-picamera2)
+
+if command -v apt-get >/dev/null 2>&1; then
+  FALTANDO=()
+  for pkg in "${APT_PACOTES[@]}"; do
+    dpkg -s "$pkg" >/dev/null 2>&1 || FALTANDO+=("$pkg")
+  done
+  if (( ${#FALTANDO[@]} )); then
+    echo "  instalando: ${FALTANDO[*]}"
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq "${FALTANDO[@]}"
+    ok "instalados: ${FALTANDO[*]}"
+  else
+    ok "todos presentes: ${APT_PACOTES[*]}"
+  fi
+else
+  aviso "sem apt-get — pulando pacotes do sistema"
+fi
+
+# --- uv ---------------------------------------------------------------------
+
+titulo "uv"
+
+if ! command -v uv >/dev/null 2>&1 && [[ ! -x "$HOME/.local/bin/uv" ]]; then
+  echo "  instalando uv…"
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ok "uv instalado"
+else
+  ok "uv já instalado"
+fi
+export PATH="$HOME/.local/bin:$PATH"
+ok "uv $(uv --version 2>/dev/null | awk '{print $2}')"
+
+# --- Ambiente Python --------------------------------------------------------
+#
+# Duas particularidades, e as duas são obrigatórias na Pi:
+#
+#   --system-site-packages     para o venv enxergar o `picamera2` do apt
+#   --python /usr/bin/python3  porque o picamera2 do apt está instalado para o
+#                              Python do sistema; um Python baixado pelo uv não
+#                              o enxergaria nem com --system-site-packages
+
+titulo "Ambiente Python"
+
+cd "$RAIZ/backend"
+if [[ ! -d .venv ]]; then
+  uv venv --system-site-packages --python /usr/bin/python3
+  ok "venv criado com --system-site-packages"
+else
+  ok "venv já existe"
+fi
+
+# Idempotente e rápido: 7,7 s medidos em aarch64 no smoke test de 16/09, com
+# wheels prontos nas mesmas versões do PC de desenvolvimento.
+uv sync --extra midia
+ok "dependências sincronizadas"
+
+# --- Configuração -----------------------------------------------------------
+
+titulo "Configuração"
+
+if [[ ! -f .env ]]; then
+  cp .env.example .env
+  ok ".env criado a partir do exemplo"
+  aviso "PREENCHA os contatos e o POTO_PAINEL_TOKEN — o /health lista o que falta."
+else
+  ok ".env já existe (preservado)"
+fi
+
+# --- Classificador ----------------------------------------------------------
+#
+# O artefato **não é versionado** (~2 MB de modelo binário que mudariam a cada
+# treino). Sem ele a triagem cai na heurística de palavras-chave e o `/health`
+# diz isso — mas com ele são 88% de acurácia em vez de palavras soltas.
+
+titulo "Classificador de triagem"
+
+if [[ -f app/data/triagem_clf.joblib ]]; then
+  ok "artefato já treinado (apague para retreinar)"
+else
+  uv run python scripts/train_classificador.py
+  ok "classificador treinado"
+fi
+
+# --- Serviço ----------------------------------------------------------------
+
+titulo "Serviço systemd"
+
+UNIT_ORIGEM="$RAIZ/deploy/poto-api.service"
+UNIT_DESTINO=/etc/systemd/system/poto-api.service
+
+if [[ ! -f "$UNIT_ORIGEM" ]]; then
+  erro "unit não encontrada em $UNIT_ORIGEM"
+  exit 1
+fi
+
+# Os caminhos da unit são absolutos e assumem `raspoto`/`~/poto-mvp`. O script
+# ajusta para o usuário e o diretório **reais** em vez de exigir que coincidam:
+# um install que só funciona num nome de usuário específico falha em silêncio
+# no primeiro que não for.
+sudo sed -e "s|^User=.*|User=${USUARIO}|" \
+         -e "s|^Group=.*|Group=${USUARIO}|" \
+         -e "s|/home/raspoto/poto-mvp|${RAIZ}|g" \
+         -e "s|/home/raspoto/.local/bin/uv|$(command -v uv)|" \
+         "$UNIT_ORIGEM" | sudo tee "$UNIT_DESTINO" >/dev/null
+sudo chmod 644 "$UNIT_DESTINO"
+ok "unit instalada (usuário ${USUARIO}, raiz ${RAIZ})"
+
+sudo systemctl daemon-reload
+sudo systemctl enable poto-api >/dev/null 2>&1 || true
+# `restart` e não só `enable --now`: numa segunda execução o serviço já está
+# ativo com o código antigo, e `enable --now` não o reiniciaria.
+sudo systemctl restart poto-api
+
+sleep 3
+if systemctl is-active --quiet poto-api; then
+  ok "poto-api ativo"
+else
+  erro "poto-api não subiu. Veja: journalctl -u poto-api -n 40"
+  exit 1
+fi
+
 # --- mDNS -------------------------------------------------------------------
 #
 # O mDNS é o que faz `<hostname>.local` resolver sem servidor de DNS nem IP
@@ -45,20 +179,8 @@ fi
 
 titulo "mDNS (avahi)"
 
-if ! command -v avahi-daemon >/dev/null 2>&1; then
-  if command -v apt-get >/dev/null 2>&1; then
-    echo "  instalando avahi-daemon…"
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq avahi-daemon avahi-utils
-    ok "avahi-daemon instalado"
-  else
-    erro "avahi-daemon ausente e sem apt-get para instalar."
-    exit 1
-  fi
-else
-  ok "avahi-daemon já instalado"
-fi
-
+# A instalação já aconteceu na seção de pacotes; aqui é só garantir que está
+# de pé.
 # `enable --now` é idempotente: em serviço já ativo, não faz nada.
 sudo systemctl enable --now avahi-daemon >/dev/null 2>&1 || true
 if systemctl is-active --quiet avahi-daemon; then
@@ -126,6 +248,38 @@ echo "     sudo nmcli con up \"\$(nmcli -g NAME con show --active | head -1)\""
 # As **duas** URLs, e é o critério da task: a de mDNS é a que se aponta o
 # tablet; a de IP é a que funciona quando o multicast não passa. Imprimir só
 # uma deixaria a pessoa sem saída no momento em que a primeira falhasse.
+
+# --- Conferência ------------------------------------------------------------
+#
+# Perguntar ao próprio `/health` em vez de confiar no `systemctl`: um serviço
+# "ativo" com o banco inacessível ou o classificador ausente está de pé **e
+# degradado**, e é exatamente isso que o `/health` foi feito para contar
+# (MVP-036).
+
+titulo "Conferência"
+
+SAUDE="$(curl -sf --max-time 10 "http://127.0.0.1:${PORTA}/api/v1/health" || true)"
+if [[ -z "$SAUDE" ]]; then
+  erro "a API não respondeu em 127.0.0.1:${PORTA}."
+  erro "Veja: journalctl -u poto-api -n 40"
+  exit 1
+fi
+ok "API respondendo"
+
+echo "$SAUDE" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+print(f"    banco:    {\"ok\" if d[\"banco\"] else \"NAO RESPONDE\"}")
+print(f"    triagem:  {d[\"triagem\"][\"modo\"]}")
+print(f"    notif:    {d[\"notificacao\"][\"provider\"]}")
+mont = "montado" if d["frontend"]["montado"] else "AUSENTE - rode make deploy"
+print(f"    frontend: {mont}  build-id {d[\"frontend\"][\"build_id\"] or \"-\"}")
+if d["avisos"]:
+    print()
+    print("    avisos:")
+    for a in d["avisos"]:
+        print(f"      ! {a}")
+' || aviso "não consegui formatar o /health"
 
 titulo "Aponte o tablet para"
 

@@ -102,7 +102,7 @@
 | MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | ⚠️ Parcial |
 | MVP-067c | Kiosk no Galaxy Tab A11 | F9 | P0 | 055b, 067b | ✅ Concluída |
 | ~~MVP-068~~ | ~~Daemon do botão GPIO~~ | — | **P2** | — | Fora do MVP |
-| MVP-069 | `install-pi.sh` (sem Node) | F9 | P0 | 067b, 066b | Pendente |
+| MVP-069 | `install-pi.sh` (sem Node) | F9 | P0 | 067b, 066b | ⚠️ Parcial |
 | MVP-070 | Teste de resiliência (Pi + tablet) | F9 | P0 | 069, 067c | Pendente |
 | MVP-071 | Seed e `make demo-reset` | F10 | P0 | 066 | Pendente |
 | MVP-072 | Roteiro de demo e plano B | F10 | P0 | 070, 071 | Pendente |
@@ -2687,7 +2687,8 @@
 
 ### MVP-069 — `install-pi.sh`
 - **Descrição:** Script idempotente que transforma uma Pi limpa num totem.
-- **Prioridade:** P0 · **Depende de:** 067b · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 067b · **Status:** ⚠️ Parcial — script completo e
+  verificado; **a execução numa Pi limpa não foi feita**
 - **Arquivos:** `deploy/install-pi.sh`
 - **Critérios de aceitação:**
   - Instala `uv`, `avahi-daemon` e `python3-picamera2` (apt) — **não instala Node**
@@ -2698,7 +2699,37 @@
   - Cria `.env` a partir do exemplo se não existir
   - **Imprime ao final as URLs** (`http://poto.local:8000` e `http://<ip>:8000`) para apontar o tablet
   - **Idempotente**: rodar duas vezes não quebra nada
-- **Como validar:** executar 2× numa Pi limpa e, do tablet, abrir a URL impressa
+- **Como validar:** executar 2× numa Pi limpa e, do tablet, abrir a URL impressa — **não
+  executado** (Pi inalcançável deste ambiente). Verificado: `bash -n` limpo, os **13
+  critérios** conferidos por script, e a unit resultante da substituição de caminhos passa
+  pelo `systemd-analyze verify` sem nenhuma reclamação
+
+> **A unit é ajustada, não copiada.** Seus caminhos assumem `raspoto` e `~/poto-mvp`; o
+> script substitui usuário, grupo, diretório e o caminho do `uv` pelos **reais**. Um
+> instalador que só funciona num nome de usuário específico falha em silêncio no primeiro
+> que não for — e o sintoma seria `systemctl status` dizendo "não encontrado" sobre um
+> caminho que ninguém digitou. Testado aqui: a unit resultante (com `User=kz`, a raiz deste
+> repositório e o `uv` real) passa pelo `systemd-analyze verify` sem avisos.
+>
+> **`systemctl restart` e não só `enable --now`.** Na segunda execução o serviço já está
+> ativo **com o código antigo**, e `enable --now` não o reinicia — o instalador terminaria
+> dizendo "ativo" sobre a versão anterior. É a forma mais fácil de um instalador idempotente
+> mentir.
+>
+> **A conferência final pergunta ao `/health`, não ao `systemctl`.** Um serviço "ativo" com
+> o banco inacessível ou o classificador ausente está de pé **e degradado**, e é exatamente
+> isso que o `/health` foi feito para contar (MVP-036). O script imprime banco, modo de
+> triagem, provider, estado do frontend com build-id, e a lista de avisos.
+>
+> Idempotência item por item, não no conjunto: pacotes conferidos com `dpkg -s` antes de
+> instalar, venv só criado se ausente, `.env` **preservado** se existir (sobrescrevê-lo
+> apagaria os contatos institucionais), classificador só treinado se o artefato faltar.
+>
+> `python3-picamera2` vem do **apt** e não do pip porque depende de `python3-libcamera`, um
+> binding C++ compilado que não existe no PyPI — daí também o
+> `--python /usr/bin/python3` no venv: o picamera2 do apt está instalado para o Python do
+> sistema, e um Python baixado pelo uv não o enxergaria nem com
+> `--system-site-packages`.
 
 > **Node saiu da lista.** O frontend é construído na máquina de desenvolvimento e enviado
 > pronto (MVP-066b). Isso poupa **133 MB e 700 arquivos** na Pi, elimina uma toolchain que
