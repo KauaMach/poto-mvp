@@ -161,10 +161,10 @@ a {
   cursor: default;
 }
 
-/* Grade 2×2 das trilhas. Colapsa para uma coluna abaixo de 560px — o Galaxy
- * Tab A11 em retrato tem 800px de largura, então a grade fica 2×2; o colapso
- * atende telefone, que é o caso de quem abre a interface pelo próprio
- * aparelho. */
+/* Grade 2×2 das trilhas — o arranjo default, para retrato e desktop.
+ *
+ * Os arranjos por orientação e por telefone ficam em `totem.css` (MVP-055),
+ * junto da derivação de viewport que os justifica. */
 .poto-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -172,11 +172,8 @@ a {
   width: 100%;
 }
 
-@media (max-width: 560px) {
-  .poto-grid {
-    grid-template-columns: 1fr;
-  }
-}
+/* O colapso para uma coluna vive em `totem.css`, em 480px: entre 480 e 560 a
+ * grade 2×2 ainda cabe num telefone em paisagem. */
 
 /* --- Panic (MVP-046) ------------------------------------------------------ */
 

@@ -11,7 +11,7 @@
  * ninguém digita URL. A rota existe enquanto o design system estiver em
  * construção.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Choice } from "./componentes/Choice";
 import { Confirm } from "./componentes/Confirm";
 import { Panic, PanicAjuda } from "./componentes/Panic";
@@ -28,6 +28,52 @@ const GLIFOS: GlifoSym[] = [
   "check",
   "arrow_back",
 ];
+
+/* Leitura do viewport — existe para a medição da MVP-055 ser um passo e não um
+ * projeto. `docs/viewports.md` tem uma tabela esperando estes números, e o
+ * critério da task é explícito: não projetar contra número suposto. */
+function Viewport() {
+  const [medida, setMedida] = useState(() => ler());
+
+  useEffect(() => {
+    const atualizar = () => setMedida(ler());
+    window.addEventListener("resize", atualizar);
+    window.addEventListener("orientationchange", atualizar);
+    return () => {
+      window.removeEventListener("resize", atualizar);
+      window.removeEventListener("orientationchange", atualizar);
+    };
+  }, []);
+
+  return (
+    <pre
+      className="tabular"
+      style={{
+        fontFamily: "var(--font-ui)",
+        fontSize: 13,
+        background: "var(--bg)",
+        border: "1.5px solid var(--line)",
+        borderRadius: "var(--r-sm)",
+        padding: "var(--space-sm) var(--space-md)",
+        marginBottom: "var(--space-xl)",
+        overflowX: "auto",
+      }}
+    >
+      {medida}
+    </pre>
+  );
+}
+
+function ler(): string {
+  const cabe = document.body.scrollHeight <= window.innerHeight;
+  return [
+    `innerWidth        ${window.innerWidth}`,
+    `innerHeight       ${window.innerHeight}`,
+    `devicePixelRatio  ${window.devicePixelRatio}`,
+    `orientação        ${window.innerWidth >= window.innerHeight ? "paisagem" : "retrato"}`,
+    `sem rolagem       ${cabe ? "sim" : "NÃO — layout excede a altura"}`,
+  ].join("\n");
+}
 
 function Secao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
@@ -68,12 +114,14 @@ export function Galeria() {
           fontFamily: "var(--font-ui)",
           fontSize: 13,
           color: "var(--muted)",
-          marginBottom: "var(--space-xl)",
+          marginBottom: "var(--space-md)",
         }}
       >
         Galeria do design system — rota de desenvolvimento, não faz parte do
         produto.
       </p>
+
+      <Viewport />
 
       <Secao titulo="Wordmark e StatusPill (MVP-044)">
         <div

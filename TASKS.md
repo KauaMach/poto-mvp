@@ -77,7 +77,7 @@
 | MVP-052 | Retorno automático à tela inicial | F6 | P0 | 051 | ✅ Concluída |
 | MVP-053 | Modo discreto | F6 | P0 | 051 | ✅ Concluída |
 | MVP-054 | Tela de alerta ativo (pânico) | F6 | P0 | 031, 051 | ✅ Concluída |
-| MVP-055 | Layout fluido: tablet (2 orientações) e desktop | F6 | P0 | 050, 054 | Pendente |
+| MVP-055 | Layout fluido: tablet (2 orientações) e desktop | F6 | P0 | 050, 054 | ⚠️ Parcial |
 | MVP-055b | Manifest e modo autônomo no tablet | F6 | P0 | 055 | Pendente |
 | MVP-056 | Acessibilidade AA | F6 | P1 | 055 | Pendente |
 | MVP-057 | Fila offline em `localStorage` | F7 | P0 | 048 | Pendente |
@@ -1850,8 +1850,10 @@
 - **Descrição:** A tela do totem é um **Galaxy Tab A11 de 8.7" (1340×800)** e precisa
   funcionar em retrato e paisagem, sem deixar de funcionar no desktop. O caso difícil é a
   paisagem: sobram ~530px de **altura** para cabeçalho, título, 4 alvos e o pânico.
-- **Prioridade:** P0 · **Depende de:** 050, 054 · **Status:** Pendente
-- **Arquivos:** `frontend/src/estilos/{base,totem}.css`
+- **Prioridade:** P0 · **Depende de:** 050, 054 · **Status:** ⚠️ Parcial — layout
+  implementado; **a medição no aparelho continua em aberto**
+- **Arquivos:** `frontend/src/estilos/{base,totem}.css`, `docs/viewports.md`,
+  `frontend/src/Galeria.tsx`, `frontend/src/App.tsx`
 - **Critérios de aceitação:**
   - **Medir primeiro:** registrar `window.innerWidth/innerHeight` reais do Tab A11 nas
     duas orientações e anotar em `docs/viewports.md`. Não projetar contra número suposto.
@@ -1868,6 +1870,36 @@
   - Painel (`/painel`) não quebra se aberto no tablet
 - **Como validar:** no aparelho real, nas duas orientações, com `document.body.scrollHeight
   === window.innerHeight`; e no DevTools em 1280×800 e 1920×1080
+
+> **O primeiro critério não foi cumprido, e é o que mantém esta task parcial.** Ele pede
+> medir `innerWidth/innerHeight` no Galaxy Tab A11 — *"não projetar contra número suposto"*
+> — e eu não tenho acesso ao aparelho. O que existe é `docs/viewports.md` com a
+> **derivação** (1340×800 ÷ DPR 1.5 → 893×533 em paisagem), marcada como não medida, e uma
+> tabela esperando os valores reais.
+>
+> Para que a medição seja um passo e não um projeto, a rota `/galeria` passou a mostrar
+> `innerWidth`, `innerHeight`, `devicePixelRatio`, a orientação e — o que de fato responde
+> o critério — se `document.body.scrollHeight <= window.innerHeight`. Abrir a galeria no
+> tablet e copiar cinco linhas fecha a task.
+>
+> **A incerteza é o DPR.** Se for 2.0 e não 1.5, a paisagem cai de 893×533 para 670×400, e
+> aí nem a grade de 4 colunas com cartão de 120 px caberia. Por isso o ponto de quebra é
+> `max-height: 620px`: ele cobre com folga os 533 derivados **e** os 400 do outro cenário —
+> é o que faz o layout sobreviver ao número que ainda não medi.
+>
+> Os pontos de quebra são por **altura disponível**, não por nome de dispositivo: uma regra
+> escrita contra "tablet" erra em qualquer aparelho que não seja aquele.
+>
+> **Alvos de toque nunca encolhem.** O cartão baixa de 168 px para 120 px em paisagem
+> apertada — ainda quase o dobro do mínimo de 64 px — e o espaço vem do ícone (56 → 40 px)
+> e do `padding`, nunca do alvo. O ícone é reduzido em CSS e não por prop porque o
+> componente não deve saber em que orientação está.
+>
+> O colapso para uma coluna mudou de 560 px para **480 px**: entre os dois a grade 2×2
+> ainda cabe num telefone em paisagem, e uma coluna ali desperdiçaria metade da tela.
+>
+> `.poto-painel` cancela o `overflow: hidden` do shell: a lista de chamados é longa e
+> precisa rolar, inclusive se o painel for aberto no tablet.
 
 ### MVP-055b — Manifest e modo autônomo no tablet
 - **Descrição:** Fazer o Chrome abrir a aplicação em tela cheia, sem barra de endereço.

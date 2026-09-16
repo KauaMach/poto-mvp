@@ -53,8 +53,11 @@ export function App() {
 // Substituído pela tela real na MVP-060.
 
 function PainelPlaceholder() {
+  /* `poto-painel` cancela o `overflow: hidden` do shell do totem: a lista de
+   * chamados é longa e **precisa** rolar, inclusive se o painel for aberto no
+   * tablet (critério da MVP-055). */
   return (
-    <main>
+    <main className="poto-painel">
       <h1>P.O.T.O — Painel da central</h1>
       <p>Scaffold ativo. A lista de chamados chega na MVP-060.</p>
     </main>

@@ -233,3 +233,87 @@
   align-items: center;
   gap: var(--space-xs);
 }
+
+/* --- Layout fluido: tablet nas duas orientações e desktop (MVP-055) -------
+ *
+ * Os pontos de quebra são escolhidos por **altura disponível**, não por nome de
+ * dispositivo: uma regra escrita contra "tablet" erra em qualquer aparelho que
+ * não seja aquele. Ver `docs/viewports.md` para a derivação — e para a nota de
+ * que os números do Tab A11 ainda são derivados, não medidos.
+ *
+ * O caso difícil é a paisagem: sobram pouco mais de 500 px de altura para
+ * cabeçalho, título, quatro alvos de 64 px e o pânico.
+ */
+
+/* Paisagem apertada → 4 colunas.
+ *
+ * `620px` cobre com folga os 533 derivados para DPR 1.5 **e** os ~400 do
+ * cenário de DPR 2.0. É o que faz o layout sobreviver ao número que ainda não
+ * foi medido no aparelho.
+ */
+@media (orientation: landscape) and (max-height: 620px) {
+  .poto-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-sm);
+  }
+
+  /* 120px continua quase o dobro do alvo mínimo de 64px. O espaço vem do
+   * ícone menor e do padding reduzido — **nunca** de encolher o alvo. */
+  .poto-choice {
+    min-height: 120px !important;
+    padding: var(--space-md) var(--space-sm) !important;
+    gap: var(--space-sm) !important;
+  }
+
+  /* O ícone cai de 56px (xl) para 40px (lg). Feito em CSS e não por prop
+   * porque o componente não deve saber em que orientação está. */
+  .poto-choice [aria-hidden="true"] {
+    font-size: 40px !important;
+    font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 40 !important;
+  }
+
+  .poto-titulo {
+    /* Em paisagem o título compete com a grade pela altura. */
+    font-size: clamp(20px, 3vh, 28px);
+    max-width: 100%;
+  }
+
+  .poto-main {
+    gap: var(--space-md);
+  }
+
+  .poto-shell-interno {
+    padding: var(--space-md) var(--space-lg);
+  }
+
+  .poto-footer {
+    padding-top: var(--space-sm);
+  }
+}
+
+/* Telefone → 1 coluna. Substitui o ponto de 560px do `base.css` com um limite
+ * mais baixo: entre 480 e 560 a grade 2×2 ainda cabe num telefone em paisagem. */
+@media (max-width: 480px) {
+  .poto-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-sm);
+  }
+
+  .poto-choice {
+    min-height: 140px !important;
+    padding: var(--space-md) !important;
+  }
+
+  .poto-choice [aria-hidden="true"] {
+    font-size: 40px !important;
+    font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 40 !important;
+  }
+}
+
+/* O painel da central é aberto no notebook, mas nada impede alguém de abri-lo
+ * no tablet. Ele **precisa** rolar — a lista de chamados é longa — então
+ * cancela o `overflow: hidden` do shell do totem. */
+.poto-painel {
+  min-height: 100dvh;
+  overflow: auto;
+}
