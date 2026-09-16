@@ -192,6 +192,86 @@ class PanicoOut(BaseModel):
     duplicado: bool = False
 
 
+# ---------------------------------------------------------------------------
+# Leitura pelo painel da central
+# ---------------------------------------------------------------------------
+#
+# Estes contratos são **lista de campos permitidos**, pelo mesmo motivo do
+# `resumo()` em `canais/base.py`: uma coluna acrescentada ao schema amanhã não
+# passa a sair pela API por esquecimento. Ficam de fora, de propósito:
+#
+#   id            rowid interno; o identificador público é o `chamado_id`
+#   evento_id     chave de idempotência do totem, sem uso para quem atende
+#   triagem_json  sai no detalhe já decodificado, como `triagem`
+#
+# A diferença em relação à notificação externa é o `texto_livre`, que **sai**
+# aqui: quem atende precisa do relato para decidir como responder, e o painel
+# está dentro da fronteira de confiança. É o que torna a autenticação do painel
+# (MVP-040) obrigatória e não opcional.
+
+
+class ChamadoOut(BaseModel):
+    """Um chamado como o painel o lista."""
+
+    chamado_id: str = Field(examples=["CALL-2026-000001"])
+    totem_id: str
+    tipo_ocorrencia: TipoOcorrencia
+    modo: Modo
+    origem_acionamento: OrigemAcionamento
+    gravidade: Gravidade
+    canal_roteado: str
+    fallback: str | None = None
+    status: StatusChamado
+    texto_livre: str | None = None
+    observacao: str | None = None
+    timestamp_local: str | None = None
+    created_at: str
+    updated_at: str
+    acked_at: str | None = None
+
+
+class NotificacaoOut(BaseModel):
+    """Uma tentativa de acionamento, como o painel a exibe.
+
+    `destino` vem **mascarado**. O contato completo fica só no banco: se a
+    autenticação do painel atrasar ou for cortada, uma rota de leitura aberta
+    não pode ser o caminho para enumerar os contatos institucionais de toda a
+    universidade. Os últimos dígitos bastam para o operador conferir qual
+    número foi usado.
+    """
+
+    canal: str
+    nome: str = Field(examples=["CSV / PREUNI"])
+    destino: str = Field(examples=["…0001"])
+    provider: str
+    sucesso: bool
+    mensagem: str | None = None
+    detalhe: str | None = None
+    escalonamento: bool = False
+    created_at: str
+
+
+class EstadoOut(BaseModel):
+    """Uma transição de estado. `de` é nulo na criação do chamado."""
+
+    de: StatusChamado | None = None
+    para: StatusChamado
+    created_at: str
+
+
+class ChamadoDetalhe(ChamadoOut):
+    """O chamado com sua história: quem foi acionado e como ele andou.
+
+    `triagem` é o registro de auditoria do merge — o que a máquina inferiu e
+    qual trilha a pessoa de fato tocou. É o que responde "por que este chamado
+    foi para o SAMU?" meses depois.
+    """
+
+    triagem: dict | None = None
+    notificacoes: list[NotificacaoOut] = Field(default_factory=list)
+    estados: list[EstadoOut] = Field(default_factory=list)
+
+
 class ChamadoUpdate(BaseModel):
     """Atualização parcial pelo operador da central."""
 

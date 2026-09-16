@@ -54,7 +54,7 @@
 | MVP-029 | Provider `webhook` | F4 | P0 | 028 | ✅ Concluída |
 | MVP-030 | `POST /eventos` | F4 | P0 | 024, 027, 028 | ✅ Concluída |
 | MVP-031 | `POST /panico` | F4 | P0 | 030 | ✅ Concluída |
-| MVP-032 | `GET /chamados` e `GET /chamados/{id}` | F4 | P0 | 016 | Pendente |
+| MVP-032 | `GET /chamados` e `GET /chamados/{id}` | F4 | P0 | 016 | ✅ Concluída |
 | MVP-033 | `POST /chamados/{id}/ack` e `PATCH` | F4 | P0 | 016, 027 | Pendente |
 | MVP-034 | `POST /chamados/{id}/escalonar` | F4 | P0 | 028, 032 | Pendente |
 | MVP-035 | `WS /ws` | F4 | P0 | 027 | Pendente |
@@ -894,13 +894,42 @@
 
 ### MVP-032 — `GET /chamados` e `GET /chamados/{id}`
 - **Descrição:** Leitura para o painel.
-- **Prioridade:** P0 · **Depende de:** 016 · **Status:** Pendente
-- **Arquivos:** `backend/app/api/chamados.py`
+- **Prioridade:** P0 · **Depende de:** 016 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/api/chamados.py`, `backend/app/models.py`,
+  `backend/app/main.py`, `backend/tests/test_api_chamados.py`
 - **Critérios de aceitação:**
   - Filtros `tipo`, `status`, `gravidade` combináveis
   - Detalhe inclui `notificacoes` e `estados`
   - `404` para id inexistente
-- **Como validar:** `curl "localhost:8000/api/v1/chamados?gravidade=risco_imediato"`
+- **Como validar:** `curl "localhost:8000/api/v1/chamados?gravidade=risco_imediato"` —
+  42 testes
+
+> **Filtro com valor inválido devolve 422, não lista vazia.** Os parâmetros são tipados
+> pelos enums do domínio de propósito. A diferença importa mais do que parece: uma lista
+> vazia por causa de `?status=reconhecidos` (no plural, o erro de digitação plausível)
+> diria ao operador que **não há chamados** — falso negativo num painel de emergência.
+>
+> Faltavam os contratos de leitura em `models.py`; foram acrescentados `ChamadoOut`,
+> `ChamadoDetalhe`, `NotificacaoOut` e `EstadoOut`. São **lista de campos permitidos**,
+> pelo mesmo motivo do `resumo()` da MVP-028: uma coluna nova no schema não passa a sair
+> pela API por esquecimento. Ficam de fora `id` (rowid interno), `evento_id` (chave de
+> idempotência do totem, sem uso para quem atende) e `triagem_json` — que sai no detalhe
+> já **decodificado**, como `triagem`, porque string de JSON dentro de JSON é só má API.
+>
+> **O `destino` sai mascarado (`…0001`).** A MVP-040 é P1, ou seja, cortável. Se a
+> autenticação do painel atrasar, uma rota de leitura aberta não pode ser o caminho para
+> enumerar os contatos institucionais de toda a universidade. Os últimos dígitos bastam
+> para o operador conferir qual número foi usado; o contato completo continua no banco.
+>
+> `triagem_json` ilegível devolve `triagem: null` e **serve o chamado assim mesmo**.
+> Perder informação diagnóstica é ruim; esconder do operador um chamado que ele precisa
+> atender é pior.
+>
+> Um dos testes estava vazio e a verificação pegou: `GET /chamados/../../etc/passwd` é
+> normalizado pelo cliente para `/api/etc/passwd` e **nunca chega à rota** — estava
+> exercitando o fallback de SPA da MVP-026, não o detalhe. Trocado por identificadores
+> que de fato chegam lá (tentativa de injeção de SQL, espaços), com a asserção que dá
+> valor ao caso: a listagem seguinte continua íntegra.
 
 ### MVP-033 — `POST /chamados/{id}/ack` e `PATCH`
 - **Descrição:** Operador reconhece e movimenta o chamado.
