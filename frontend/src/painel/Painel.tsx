@@ -16,9 +16,10 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { listarChamados, obterConfig } from "../comum/api";
-import type { Chamado, ConfigPublica } from "../comum/tipos";
-import { StatusPill } from "../componentes/StatusPill";
+import type { Chamado, ConfigPublica, EventoWS } from "../comum/tipos";
+import { useEventosWS } from "../comum/useEventosWS";
 import { Wordmark } from "../componentes/Wordmark";
+import { IndicadorTempoReal } from "./IndicadorTempoReal";
 import { ListaChamados } from "./ListaChamados";
 
 type Carga =
@@ -46,6 +47,23 @@ export function Painel() {
       return copia;
     });
   }, []);
+
+  /* O hub transmite `{evento, dados}` com o mesmo contrato do REST — é a
+   * garantia da MVP-033, que unificou `para_painel()` nos cinco pontos de
+   * broadcast. Sem ela, este handler precisaria de um segundo formato de
+   * `Chamado` e o tipo declarado mentiria sobre um dos dois. */
+  const aoEvento = useCallback(
+    (evento: EventoWS) => {
+      if (evento.evento === "novo_chamado" || evento.evento === "atualizado") {
+        aplicar(evento.dados);
+      }
+      /* `conectado` e `ping` não mexem na lista: o primeiro é boas-vindas, o
+       * segundo é keepalive. O estado da conexão vem do próprio hook. */
+    },
+    [aplicar],
+  );
+
+  const estadoWS = useEventosWS(aoEvento);
 
   useEffect(() => {
     let vivo = true;
@@ -88,9 +106,11 @@ export function Painel() {
             Plataforma de Orientação, Triagem e Ouvidoria
           </span>
         </div>
-        {/* O `StatusPill` do totem serve aqui sem mudança: a pergunta é a
-            mesma — "o que estou vendo está atualizado?". */}
-        <StatusPill online={carga.estado === "pronto"} />
+        {/* Não é o `StatusPill` do totem: a pergunta ali é "o que eu tocar
+            chega agora?", e aqui é "o que está na tela é ao vivo?". Num painel
+            onde nada acontece por vinte minutos, silêncio e conexão morta
+            parecem idênticos e significam o oposto. */}
+        <IndicadorTempoReal estado={estadoWS} />
       </header>
 
       <main className="poto-painel-corpo">

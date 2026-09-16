@@ -85,7 +85,7 @@
 | MVP-059 | Re-triagem protetiva no dreno | F7 | P0 | 023, 058 | ✅ Concluída |
 | MVP-060 | Shell e lista do painel | F8 | P0 | 032, 042 | ✅ Concluída |
 | MVP-061 | Card de chamado com gravidade | F8 | P0 | 060 | ✅ Concluída |
-| MVP-062 | WebSocket em tempo real no painel | F8 | P0 | 035, 060 | Pendente |
+| MVP-062 | WebSocket em tempo real no painel | F8 | P0 | 035, 060 | ✅ Concluída |
 | MVP-063 | ACK e mudança de estado | F8 | P0 | 033, 061 | Pendente |
 | MVP-064 | Contador de SLA ao vivo | F8 | P0 | 037, 061 | Pendente |
 | MVP-065 | Filtros e busca | F8 | P1 | 060 | Pendente |
@@ -2199,14 +2199,40 @@
 
 ### MVP-062 — WebSocket em tempo real
 - **Descrição:** O painel acende sozinho, sem recarregar.
-- **Prioridade:** P0 · **Depende de:** 035, 060 · **Status:** Pendente
-- **Arquivos:** `frontend/src/comum/ws.ts`
+- **Prioridade:** P0 · **Depende de:** 035, 060 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/comum/ws.ts`,
+  `frontend/src/painel/{IndicadorTempoReal.tsx,Painel.tsx}`
 - **Critérios de aceitação:**
   - `novo_chamado` insere o card no topo em **< 1 s**
   - `atualizado` atualiza o card no lugar, sem piscar a lista
   - Reconexão automática com backoff
   - Indicador de conexão do WS visível
-- **Como validar:** totem e painel em duas abas; acionar e cronometrar
+- **Como validar:** totem e painel em duas abas; acionar e cronometrar — **medido:
+  553,9 ms** do `POST /eventos` até o `novo_chamado` chegar ao painel (inclui triagem com
+  carga do classificador, escrita no banco e broadcast)
+
+> **A conexão em si já existia.** O `useEventosWS` foi escrito na MVP-054 para o totem
+> acompanhar o próprio alerta, com reconexão de espera crescente; o painel o reusa sem
+> mudança. O que faltava era a **legenda**.
+>
+> E a legenda não é o `StatusPill` do totem. A pergunta ali é *"o que eu tocar chega
+> agora?"*; aqui é *"o que está na tela é ao vivo?"*. Num painel onde nada acontece por
+> vinte minutos, **silêncio e conexão morta parecem idênticos na tela e significam o
+> oposto** — o operador acharia que a noite está calma.
+>
+> **`atualizado` atualiza no lugar porque o formato do WS é o mesmo do REST.** Isso foi
+> garantido na MVP-033, quando os cinco pontos de broadcast passaram a usar
+> `models.para_painel()`. Verificado de ponta a ponta: o conjunto de campos do payload do
+> WebSocket é idêntico ao de `GET /chamados`. Sem essa unificação, este handler precisaria
+> de um segundo formato de `Chamado` e o tipo declarado mentiria sobre um dos dois.
+>
+> `conectado` e `ping` não mexem na lista — o primeiro é boas-vindas, o segundo keepalive.
+> O estado da conexão vem do retorno do hook, não de contar pings.
+>
+> O pulso do ponto é **o único movimento do painel**, de propósito: uma tela de trabalho
+> lida por horas não pode ter animação competindo com o conteúdo. Com movimento reduzido o
+> pulso para mas o ponto permanece — ele carrega a cor, que é metade do sinal; o rótulo ao
+> lado carrega a outra.
 
 ### MVP-063 — ACK e mudança de estado
 - **Descrição:** Ações do operador.

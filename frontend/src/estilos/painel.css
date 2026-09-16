@@ -186,3 +186,44 @@
   color: var(--warn);
   font-weight: 500;
 }
+
+/* --- Indicador de tempo real (MVP-062) ------------------------------------ */
+
+.poto-tempo-real {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Pulso só quando a conexão está viva. É o que distingue "ao vivo" de uma
+ * legenda estática dizendo que está ao vivo — e é o único movimento do painel,
+ * de propósito: uma tela de trabalho lida por horas não pode ter animação
+ * competindo com o conteúdo. */
+.poto-ponto-vivo {
+  animation: poto-piscar 2s ease-in-out infinite;
+}
+
+@keyframes poto-piscar {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* O ponto **permanece** com movimento reduzido: ele carrega a cor, que é
+ * metade do sinal. O rótulo ao lado carrega a outra metade. */
+@media (prefers-reduced-motion: reduce) {
+  .poto-ponto-vivo {
+    animation: none;
+    opacity: 1;
+  }
+}
