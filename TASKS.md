@@ -93,7 +93,7 @@
 | MVP-074 | Captura de vídeo (picamera2 / V4L2) | F8b | P0 | 073 | ✅ Concluída |
 | MVP-077 | **Sessão de mídia com auditoria** | F8b | P0 | 073, 017 | ✅ Concluída |
 | MVP-075 | Stream MJPEG | F8b | P0 | 074, 077 | ✅ Concluída |
-| MVP-076 | Captura e stream de áudio (ALSA) | F8b | P0 | 073, 077 | Pendente |
+| MVP-076 | Captura e stream de áudio (ALSA) | F8b | P0 | 073, 077 | ⚠️ Parcial |
 | MVP-078 | Visualização no painel | F8b | P0 | 063, 075, 076 | Pendente |
 | MVP-079 | Custo de CPU e latência na Pi | F8b | P0 | 075, 076 | Pendente |
 | MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | ✅ Concluída |
@@ -2522,14 +2522,99 @@
 
 ### MVP-076 — Captura e stream de áudio
 - **Descrição:** Ouvir o local do totem durante um chamado.
-- **Prioridade:** P0 · **Depende de:** 073, 077 · **Status:** Pendente
-- **Arquivos:** `backend/app/midia/microfone.py`
+- **Prioridade:** P0 · **Depende de:** 073, 077 · **Status:** ⚠️ Parcial — caminho de
+  software completo e medido na Pi; **a escuta audível está bloqueada por hardware**
+- **Arquivos:** `backend/app/midia/microfone.py`, `backend/app/api/midia.py`,
+  `backend/tests/test_microfone.py`, `backend/tests/test_midia_sessao.py`
 - **Critérios de aceitação:**
   - Captura ALSA (`sounddevice` ou `arecord`), 16 kHz mono — voz não precisa de mais
   - `GET /midia/microfone/{id}/stream` em `audio/wav` por chunks, tocável num `<audio>`
   - **Sem `sessao` válida → `403`**
   - **Fallback documentado:** se o streaming contínuo se mostrar instável, clipe de 15 s sob demanda
-- **Como validar:** abrir o stream no painel e ouvir; medir atraso falando perto do microfone
+- **Como validar:** abrir o stream no painel e ouvir; medir atraso falando perto do microfone —
+  **o caminho de software foi todo medido na Pi real em 16/09; a parte "ouvir" não**:
+  - detecção: `alsa:2,0` · `plughw:2,0` · 16 kHz mono
+  - stream: 10 blocos = 32.000 bytes = **1,00 s de áudio** em 1,24 s de relógio
+  - latência: **342 ms** até o 1º bloco (inclui abrir o processo), **100 ms em regime** —
+    mediana, mínimo e máximo todos em 100 ms, que é o piso do tamanho do bloco
+  - clipe de 2 s: **64.044 bytes** = 64.000 de dados + 44 de cabeçalho, exato para
+    16 kHz × 16 bit × mono. O `file` do sistema confirma o cabeçalho montado à mão:
+    *"WAVE audio, Microsoft PCM, 16 bit, mono 16000 Hz"*
+  - dois ouvintes juntos: **um só** `arecord`, 9.600 bytes idênticos para cada
+  - **nenhum `arecord` órfão** depois de stream, clipe ou erro
+  - 49 testes (24 do módulo + 25 de rota); o "ouvir" depende da MVP-078 e do hardware
+
+> **O microfone da Pi entrega silêncio digital, e isso é achado de hardware, não de
+> código.** Com ganho em 100% e 3 s de captura: **48.000 amostras, 0 não-zero, pico 0**.
+> Não é sala quieta — sala quieta tem piso de ruído. É zero absoluto.
+>
+> O dongle é um **Jieli Technology USB Composite Device (4c4a:4155)**. Ele enumera
+> corretamente, declara `wTerminalType 0x0201 Microphone`, aceita S16_LE mono 48 kHz e
+> entrega a quantidade **exata** de bytes pedida. Só que todos são zero. O mixer está
+> aberto (`Mic` em 147 [100%] [on], AGC ligado) e não há saída no cartão 2, então não é
+> jack de fone confundido com entrada.
+>
+> **Consequência honesta:** a MVP-076 fica Parcial. Tudo o que o software controla está
+> medido; a única coisa que falta é a que depende de o dispositivo produzir som. Isso
+> precisa ser resolvido no hardware — trocar o dongle ou conferir o microfone — antes da
+> demonstração.
+>
+> Este é exatamente o cenário que o comentário do `_wav` chama de **silêncio falso**: um
+> microfone mudo é indistinguível de um local calmo, e num totem de emergência isso é a
+> pior falha possível, porque o operador conclui que está tudo bem. O código já encerra o
+> stream em erro em vez de entregar silêncio, mas **nenhum código distingue zero de
+> calma** — a detecção de mudez precisaria medir o nível do sinal, e isso não está no
+> escopo do MVP.
+
+> **`arecord`, não `sounddevice`.** O segundo é binding de PortAudio, e na Pi o import
+> morre com `OSError: PortAudio library not found` — resolver exigiria `libportaudio2` do
+> apt. O `arecord` vem do `alsa-utils`, já instalado, e o critério aceita os dois.
+>
+> **`plughw:`, não `hw:`.** Medido: o dongle aceita **somente 48.000 Hz**. Com `hw:` a
+> captura a 16 kHz falharia com "Invalid argument"; o plugin de conversão do ALSA é o que
+> permite pedir 16 kHz e receber 16 kHz. A escolha vinha da MVP-073 por precaução e agora
+> tem número que a justifica.
+>
+> **O compartilhamento é diferente do da câmera, e a diferença é o ponto.** Em
+> `camera.py` cada assinante pede "o frame mais recente" e dois operadores veem a mesma
+> imagem. Áudio é fluxo contínuo de amostras: dois consumidores lendo do mesmo pipe
+> receberiam **metade das amostras cada** e os dois ouviriam picado — que é difícil de
+> distinguir de "o microfone é ruim". Daí uma thread leitora e **uma fila por assinante**.
+>
+> **Fila com teto, descartando o mais antigo.** 50 blocos = 5 s ≈ 160 KB. Sem teto, uma
+> aba em segundo plano — que o navegador desacelera — faria a fila crescer até a memória
+> acabar. Descartar o **novo** faria o atraso crescer para sempre; numa escuta ao vivo a
+> amostra velha não vale nada.
+>
+> **Bloco de 100 ms porque o tamanho do bloco é o piso da latência.** O primeiro som só
+> sai depois de o bloco encher. Blocos de 1 s dariam 1 s de atraso garantido. Medido: a
+> latência em regime é exatamente os 100 ms do bloco, sem sobra.
+>
+> **O cabeçalho WAV é montado aqui, com `arecord -t raw`.** Num pipe o `arecord` não pode
+> voltar atrás para escrever o tamanho, então grava um valor que não corresponde ao que
+> sai. No stream o tamanho vai como `0xFFFFFFFF` — a convenção do `ffmpeg` escrevendo num
+> pipe — e o custo é o player mostrar duração absurda. É o que permite tocar num
+> `<audio src="…">` **sem uma linha de JavaScript**, a mesma escolha do MJPEG no `<img>`.
+> O clipe, por ser arquivo fechado, leva o tamanho verdadeiro.
+>
+> **O clipe não é só "documentado", é implementado.** A task pedia fallback documentado; um
+> fallback que ninguém escreveu não é fallback no dia em que for preciso. Ele reaproveita o
+> mesmo compartilhamento, então pedir um clipe durante um stream não reabre o dispositivo.
+>
+> **Um bug meu, achado por teste.** `_motivo()` lia `proc.returncode` sem chamar `wait()`
+> antes — e o atributo só é preenchido por `wait`/`poll`, devolvendo `None` mesmo num
+> processo já morto. O efeito: um `arecord` recusado por "device busy" virava stream vazio,
+> e o operador veria player mudo sem nenhuma pista. O teste do dispositivo ocupado foi o
+> que não levantou nada.
+>
+> **E um defeito de teste que contaminava também a MVP-075.** A mutação que remove
+> `blocos.close()` **passou** nos 76 testes. Causa: o refcount do CPython finaliza o
+> gerador quando a variável sai de escopo, então o `finally` rodava sozinho — o teste media
+> a limpeza do interpretador, não a do código. A mesma mutação sobrevivia em
+> `frames.close()` no vídeo, na fixture que eu havia escrito justamente para provar que a
+> câmera não trava. As duas fixtures passam a **guardar referência ao gerador**, o que não
+> é artificial: é o que uma exceção faz ao manter o frame vivo pelo traceback, e é aí que o
+> dispositivo fica preso de verdade.
 
 ### MVP-077 — Sessão de mídia com auditoria ★
 - **Descrição:** O controle que impede a câmera de virar vigilância. **Nenhum stream existe fora disso.**

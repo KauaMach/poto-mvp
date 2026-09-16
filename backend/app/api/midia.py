@@ -22,12 +22,12 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
 from .. import midia
-from ..midia import camera
+from ..midia import camera, microfone
 from ..midia import sessao as sessoes
 from ..models import MidiaIn, MidiaOut
 from .deps import CABECALHO, exigir_token
@@ -213,6 +213,120 @@ async def _multipart(
         # A linha que impede a câmera de ficar travada. Roda no desconecte, na
         # expiração, no erro e no encerramento da aplicação.
         frames.close()
+
+
+# ---------------------------------------------------------------------------
+# Áudio (MVP-076)
+# ---------------------------------------------------------------------------
+
+
+@router_stream.get("/midia/microfone/{dispositivo_id}/stream")
+def stream_microfone(
+    request: Request, dispositivo_id: str, sessao: str = ""
+) -> StreamingResponse:
+    """Áudio ao vivo em WAV por chunks.
+
+    Mesma escolha do MJPEG no vídeo: `audio/wav` toca num `<audio src="…">`
+    **sem uma linha de JavaScript** — sem WebRTC, sem MSE, sem biblioteca. Um
+    formato de 1991 que resolve o problema de 2026.
+
+    O cabeçalho vai com tamanho desconhecido (`0xFFFFFFFF`), que é a convenção
+    para WAV em fluxo — o mesmo que o `ffmpeg` escreve num pipe. O custo é o
+    player mostrar uma duração absurda; para escuta ao vivo isso não atrapalha.
+
+    **A sessão da câmera não serve aqui.** `validar()` confere o dispositivo, e
+    áudio é mais invasivo que imagem: sem essa checagem, um pedido de vídeo
+    daria de graça o som do local (MVP-077).
+
+    Sem `sessao` válida → **403**.
+    """
+    s = _validar(sessao, dispositivo_id)
+
+    return StreamingResponse(
+        _wav(request, dispositivo_id, s),
+        media_type="audio/wav",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def _wav(
+    request: Request, dispositivo_id: str, s: sessoes.Sessao
+) -> AsyncIterator[bytes]:
+    """Cabeçalho WAV, depois os blocos PCM crus.
+
+    **Assíncrono pelo mesmo motivo do vídeo**, e a consequência aqui é ainda
+    pior: um gerador síncrono no threadpool deixaria o `arecord` rodando depois
+    de o cliente sair, e um `arecord` órfão mantém o dispositivo ALSA preso — a
+    próxima sessão falharia com "device busy" até alguém reiniciar o serviço.
+
+    O `next()` vai para um thread porque a leitura espera o bloco encher: 100 ms
+    a cada volta, que bloqueariam o event loop e atrasariam um `POST /eventos`.
+    """
+    blocos = microfone.abrir(dispositivo_id)
+    try:
+        # O cabeçalho primeiro: o player precisa dele para saber a taxa e o
+        # número de canais antes da primeira amostra.
+        yield microfone.cabecalho_wav()
+        while True:
+            if await request.is_disconnected():
+                return
+            # Checado a cada bloco, não só na abertura: sem isso, um stream
+            # aberto no minuto 9 seguiria entregando áudio por horas, e o prazo
+            # de 10 min da sessão viraria decoração.
+            if s.expirada:
+                logger.info("áudio encerrado por expiração: %s", s.sessao_id)
+                return
+            yield await run_in_threadpool(next, blocos)
+    except StopIteration:
+        return
+    except microfone.MicrofoneIndisponivel as erro:
+        # Microfone desconectado no meio. Encerrar é o certo: o player para e o
+        # operador percebe, em vez de ouvir silêncio achando que o local está
+        # calmo. **Silêncio falso é pior que erro visível** num totem de
+        # emergência.
+        logger.warning("áudio de %s interrompido: %r", dispositivo_id, erro)
+    finally:
+        blocos.close()
+
+
+@router_stream.get("/midia/microfone/{dispositivo_id}/clipe")
+async def clipe_microfone(dispositivo_id: str, sessao: str = "", segundos: float = 15.0):
+    """Um WAV fechado, de duração definida.
+
+    É o **fallback previsto pela task**: se o stream contínuo se mostrar
+    instável — rede oscilando, player que não lida com tamanho desconhecido —
+    um clipe resolve o essencial, que é ouvir o local. Sendo arquivo completo,
+    toca em qualquer player e pode ser baixado.
+
+    O teto de 60 s não é arbitrário: a sessão dura 10 min e um clipe longo
+    ocuparia o dispositivo sem o operador poder interromper, além de segurar a
+    resposta HTTP todo esse tempo.
+    """
+    s = _validar(sessao, dispositivo_id)
+    duracao = max(1.0, min(float(segundos), 60.0))
+
+    try:
+        dados = await run_in_threadpool(microfone.clipe, dispositivo_id, duracao)
+    except microfone.MicrofoneIndisponivel as erro:
+        raise HTTPException(status_code=503, detail=str(erro)) from None
+
+    return Response(
+        content=dados,
+        media_type="audio/wav",
+        headers={
+            "Cache-Control": "no-store",
+            # `inline` e não `attachment`: o padrão é ouvir no painel, não
+            # baixar um arquivo com o som de um chamado para a pasta de
+            # downloads de quem atende.
+            "Content-Disposition": (
+                f'inline; filename="poto-{s.chamado_id}-{int(duracao)}s.wav"'
+            ),
+        },
+    )
 
 
 def _validar(sessao_id: str, dispositivo_id: str) -> sessoes.Sessao:

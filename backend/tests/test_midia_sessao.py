@@ -465,18 +465,37 @@ def camera_falsa(monkeypatch):
 
     O que se cobra não é a imagem — é o **ciclo de vida**. O bug encontrado na
     Pi real foi exatamente aqui.
+
+    **A fixture guarda uma referência ao gerador de propósito.** Sem isso estes
+    testes eram *vazios* quanto ao ponto principal: eu removi o `frames.close()`
+    do `_multipart` e os 52 testes continuaram passando, porque o refcount do
+    CPython finaliza o gerador ao fim da função e o `finally` roda sozinho. O
+    teste media a limpeza do interpretador, não a do código — e a linha que ele
+    devia proteger é justamente a que impede a câmera de travar.
+
+    Descoberto ao aplicar a mesma mutação no caminho de áudio (MVP-076), que
+    tinha o mesmo defeito herdado desta fixture.
+
+    Segurar a referência também é fiel ao mundo real: uma exceção mantém o frame
+    do gerador vivo pelo traceback, e é aí que a câmera fica presa.
     """
     from app.midia import camera as mod
 
-    estado = {"abertas": 0, "fechadas": 0}
+    estado: dict = {"abertas": 0, "fechadas": 0, "geradores": []}
 
     def abrir(_id):
         estado["abertas"] += 1
-        try:
-            while True:
-                yield JPEG
-        finally:
-            estado["fechadas"] += 1
+
+        def frames():
+            try:
+                while True:
+                    yield JPEG
+            finally:
+                estado["fechadas"] += 1
+
+        gerador = frames()
+        estado["geradores"].append(gerador)
+        return gerador
 
     monkeypatch.setattr(mod, "abrir", abrir)
     return estado
@@ -655,3 +674,255 @@ async def test_falha_da_camera_no_meio_libera(cliente, monkeypatch):
 
     assert len(partes) == 1
     assert estado["fechadas"] == 1
+
+
+# ===========================================================================
+# Stream de áudio (MVP-076)
+# ===========================================================================
+#
+# Mesma divisão de método do vídeo: as **recusas** vão pelo `TestClient`,
+# porque respondem antes de abrir captura nenhuma; a **entrega** exercita o
+# gerador direto, porque um stream é infinito e o `TestClient` penduraria.
+#
+# A garantia central aqui não é o formato do WAV — é que **a sessão da câmera
+# não autoriza o microfone**. Áudio é mais invasivo que imagem: sem essa
+# checagem, um único pedido de vídeo daria de graça o som do local.
+
+WAV_BLOCO = b"\x00\x00" * 100
+
+
+@pytest.fixture
+def microfone_falso(monkeypatch):
+    """Microfone de mentira que conta aberturas e fechamentos.
+
+    **A fixture guarda uma referência ao gerador, e isso é o ponto.** A primeira
+    versão não guardava, e por isso o teste de liberação era *vazio*: removi o
+    `blocos.close()` do `_wav` e os 76 testes continuaram passando.
+
+    O motivo é o refcount do CPython — quando `_wav` termina, a variável local
+    sai de escopo, o gerador é finalizado e o `finally` roda sozinho. O teste
+    media a limpeza do interpretador, não a do código.
+
+    Segurando a referência, só um `close()` explícito executa o `finally`. E não
+    é cenário artificial: é o que acontece de verdade quando uma exceção
+    mantém o frame do gerador vivo pelo traceback — que é justamente o caminho
+    em que o `arecord` ficaria órfão e prenderia o dispositivo ALSA.
+    """
+    from app.midia import microfone as mod
+
+    estado: dict = {"abertas": 0, "fechadas": 0, "geradores": []}
+
+    def abrir(_id, espera=5.0):
+        estado["abertas"] += 1
+
+        def blocos():
+            try:
+                while True:
+                    yield WAV_BLOCO
+            finally:
+                estado["fechadas"] += 1
+
+        gerador = blocos()
+        estado["geradores"].append(gerador)
+        return gerador
+
+    monkeypatch.setattr(mod, "abrir", abrir)
+    return estado
+
+
+# --- Recusas ----------------------------------------------------------------
+
+
+def test_audio_sem_sessao_e_403(cliente):
+    """O critério que a task manda testar explicitamente."""
+    assert cliente.get("/api/v1/midia/microfone/alsa:2,0/stream").status_code == 403
+
+
+def test_audio_com_sessao_inventada_e_403(cliente):
+    r = cliente.get("/api/v1/midia/microfone/alsa:2,0/stream?sessao=nao-existe")
+    assert r.status_code == 403
+
+
+def test_sessao_de_camera_nao_autoriza_o_microfone(cliente):
+    """**A garantia mais importante do áudio.**
+
+    Um pedido de vídeo não pode virar acesso ao som do local. Sem esta
+    checagem, quem obtivesse uma sessão de câmera — o caminho mais banal, e o
+    que o painel usa primeiro — passaria a ouvir o ambiente também.
+    """
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "csi:0")
+
+    r = cliente.get(f"/api/v1/midia/microfone/alsa:2,0/stream?sessao={s.sessao_id}")
+
+    assert r.status_code == 403
+
+
+def test_audio_com_sessao_expirada_e_403(cliente):
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "alsa:2,0")
+    s.expira_em = time.monotonic() - 1
+
+    r = cliente.get(f"/api/v1/midia/microfone/alsa:2,0/stream?sessao={s.sessao_id}")
+
+    assert r.status_code == 403
+
+
+def test_403_nao_abre_o_microfone(cliente, microfone_falso):
+    """A recusa acontece **antes** da captura.
+
+    Abrir e depois recusar ligaria o microfone para quem não tem autorização —
+    e a auditoria não registraria essa escuta.
+    """
+    cliente.get("/api/v1/midia/microfone/alsa:2,0/stream?sessao=xyz")
+
+    assert microfone_falso["abertas"] == 0
+
+
+def test_clipe_sem_sessao_e_403(cliente):
+    """O fallback tem que ter a mesma porta que o stream.
+
+    Um clipe liberado seria a brecha óbvia: gravaria o local em arquivo,
+    justamente o caminho mais fácil de guardar e repassar.
+    """
+    assert cliente.get("/api/v1/midia/microfone/alsa:2,0/clipe").status_code == 403
+
+
+def test_clipe_com_sessao_de_camera_e_403(cliente):
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "csi:0")
+
+    r = cliente.get(f"/api/v1/midia/microfone/alsa:2,0/clipe?sessao={s.sessao_id}")
+
+    assert r.status_code == 403
+
+
+def test_sessao_de_microfone_nao_autoriza_a_camera(cliente):
+    """O simétrico, e não é redundante: o `validar` compara dispositivos, e uma
+    implementação que só recusasse "microfone com sessão de câmera" passaria
+    pelo teste de cima e deixaria a câmera aberta."""
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "alsa:2,0")
+
+    r = cliente.get(f"/api/v1/midia/camera/csi:0/stream?sessao={s.sessao_id}")
+
+    assert r.status_code == 403
+
+
+# --- Entrega ----------------------------------------------------------------
+
+
+async def test_wav_comeca_pelo_cabecalho(cliente, microfone_falso):
+    """O player precisa da taxa e do número de canais **antes** da primeira
+    amostra. Sem o cabeçalho na frente, o navegador não toca nada."""
+    from app.api import midia as api_midia
+    from app.midia import microfone as mod
+
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "alsa:2,0")
+    gerador = api_midia._wav(RequisicaoFalsa(desconecta_em=2), "alsa:2,0", s)
+
+    primeiro = await anext(gerador)
+
+    assert primeiro == mod.cabecalho_wav()
+    assert primeiro[:4] == b"RIFF"
+    assert await anext(gerador) == WAV_BLOCO
+    await gerador.aclose()
+
+
+async def test_desconexao_libera_o_microfone(cliente, microfone_falso):
+    """**O que impede o `arecord` de ficar órfão.**
+
+    Um `arecord` que sobrevive ao fechamento da aba mantém o dispositivo ALSA
+    preso, e a próxima sessão falha com "device busy" até alguém reiniciar o
+    serviço. É o mesmo bug que a câmera teve na Pi real (MVP-075).
+    """
+    from app.api import midia as api_midia
+
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "alsa:2,0")
+    req = RequisicaoFalsa(desconecta_em=2)
+
+    blocos = [b async for b in api_midia._wav(req, "alsa:2,0", s)]
+
+    assert microfone_falso["abertas"] == 1
+    assert microfone_falso["fechadas"] == 1, "o arecord ficaria órfão"
+    assert len(blocos) >= 2  # cabeçalho + ao menos um bloco
+
+
+async def test_expiracao_encerra_o_audio(cliente, microfone_falso):
+    """A sessão é checada **a cada bloco**, não só na abertura.
+
+    Checar uma vez só tornaria o prazo de 10 min decorativo: um stream aberto
+    no minuto 9 seguiria entregando som por horas.
+    """
+    from app.api import midia as api_midia
+
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "alsa:2,0")
+    gerador = api_midia._wav(RequisicaoFalsa(), "alsa:2,0", s)
+
+    await anext(gerador)  # cabeçalho
+    await anext(gerador)  # um bloco
+
+    s.expira_em = time.monotonic() - 1
+
+    with pytest.raises(StopAsyncIteration):
+        await anext(gerador)
+    assert microfone_falso["fechadas"] == 1
+
+
+async def test_falha_do_microfone_no_meio_libera(cliente, monkeypatch):
+    """Microfone arrancado durante a escuta.
+
+    Encerrar é o certo. **Silêncio falso é pior que erro visível** num totem de
+    emergência: o operador acharia o local calmo.
+    """
+    from app.api import midia as api_midia
+    from app.midia import microfone as mod
+
+    estado = {"fechadas": 0}
+
+    def abrir(_id, espera=5.0):
+        try:
+            yield WAV_BLOCO
+            raise mod.MicrofoneIndisponivel("cabo arrancado")
+        finally:
+            estado["fechadas"] += 1
+
+    monkeypatch.setattr(mod, "abrir", abrir)
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "alsa:2,0")
+
+    blocos = [b async for b in api_midia._wav(RequisicaoFalsa(), "alsa:2,0", s)]
+
+    assert len(blocos) == 2  # cabeçalho + o único bloco entregue
+    assert estado["fechadas"] == 1
+
+
+def test_audio_tambem_grava_auditoria(cliente):
+    """A auditoria não distingue câmera de microfone — e não deveria.
+
+    Uma escuta sem rastro é exatamente o que a MVP-077 existe para impedir.
+    """
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "alsa:2,0")
+    sessoes.fechar(s.sessao_id)
+
+    linhas = db.listar_auditoria_midia(cid)
+
+    assert len(linhas) == 2
+    assert {linha["acao"] for linha in linhas} == {"abertura", "fechamento"}
+    assert all(linha["dispositivo_id"] == "alsa:2,0" for linha in linhas)
+
+
+def test_url_do_stream_de_microfone_aponta_para_o_recurso_certo(cliente):
+    """O painel não monta a URL: ela vem pronta do backend, e o tipo do
+    dispositivo decide o recurso."""
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "alsa:2,0")
+
+    url = sessoes.url_do_stream(s)
+
+    assert url.startswith("/api/v1/midia/microfone/alsa:2,0/stream?sessao=")
+    assert "camera" not in url
