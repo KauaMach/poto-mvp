@@ -67,7 +67,7 @@
 | MVP-042 | `tokens.css` e `base.css` | F5 | P0 | 003 | ✅ Concluída |
 | MVP-043 | Componente `<Sym>` (ícones) | F5 | P0 | 041, 042 | ✅ Concluída |
 | MVP-044 | Componentes `<Wordmark>` e `<StatusPill>` | F5 | P0 | 042, 043 | ✅ Concluída |
-| MVP-045 | Componente `<Choice>` | F5 | P0 | 042, 043 | Pendente |
+| MVP-045 | Componente `<Choice>` | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-046 | Componente `<Panic>` com pressionar-e-segurar | F5 | P0 | 042, 043 | Pendente |
 | MVP-047 | Componente `<Confirm>` | F5 | P0 | 042, 043 | Pendente |
 | MVP-048 | Cliente de API tipado | F6 | P0 | 010, 030 | Pendente |
@@ -1415,15 +1415,40 @@
 
 ### MVP-045 — Componente `<Choice>`
 - **Descrição:** O botão-cartão das trilhas — o elemento mais importante da interface.
-- **Prioridade:** P0 · **Depende de:** 042, 043 · **Status:** Pendente
-- **Arquivos:** `frontend/src/componentes/Choice.tsx`
+- **Prioridade:** P0 · **Depende de:** 042, 043 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/componentes/Choice.tsx`, `frontend/src/estilos/base.css`
 - **Critérios de aceitação:**
   - `min-height: 168px`, `padding: 28px 16px`, borda `1.5px var(--line)`, raio `var(--r-lg)`
   - Ícone 56px em `--rust`; variante `muted` usa `--muted`
   - Rótulo em Michroma 13px, `letter-spacing: .04em`, centrado
   - Hover → borda `--rust` + fundo `--rust-soft`; active → `scale(.97)`
   - Alvo de toque ≥ 64px; foco visível
-- **Como validar:** comparação lado a lado com `../poto-pitch/capturas-de-tela/Tela-Totem.png`
+- **Como validar:** comparação lado a lado com
+  `../poto-pitch/capturas-de-tela/Tela-Totem.png` — conferido: três trilhas em ferrugem,
+  "Outros" em `--muted`, grade 2×2
+
+> **A cor do ícone é informação, não decoração.** Três trilhas usam ferrugem; "Outros" usa
+> `--muted`. É a regra 60/30/10 dizendo que aquela trilha não é emergência, e é o que a
+> captura de referência mostra. Quem chega com pressa precisa que as três opções urgentes
+> se destaquem da quarta.
+>
+> **`:hover` ficou guardado por `@media (hover: hover)`.** Num tablet o navegador emula
+> hover *depois* do toque, e sem a guarda o cartão ficaria grudado em destaque até o
+> próximo toque em outro lugar — a tela mentiria sobre qual trilha está selecionada.
+>
+> Hover, active e a grade vivem em CSS e não em estilo inline porque pseudo-classes e
+> media queries não existem em `style`. As medidas ficam no `style` do componente, junto do
+> código que as usa, já que vêm de PLAN.md §6.
+>
+> `transition` lista as três propriedades em vez de usar `all`: com `all` a cor do texto e
+> o raio da borda também animariam, e esses devem ser instantâneos.
+>
+> `maxWidth: 18ch` no rótulo — sem isso "Assédio / Sala Lilás" quebra em três linhas e
+> desalinha o cartão em relação ao vizinho da grade.
+>
+> `desabilitado` existe para o envio em curso (MVP-050): sem ele, dois toques rápidos
+> geram dois chamados, e a idempotência do backend só protege reenvios do **mesmo**
+> `evento_id` — dois toques geram dois ids distintos.
 
 ### MVP-046 — Componente `<Panic>` com pressionar-e-segurar
 - **Descrição:** Botão de pânico — sempre o elemento de maior peso visual da tela. Como é

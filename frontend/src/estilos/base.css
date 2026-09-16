@@ -133,3 +133,46 @@ a {
     scroll-behavior: auto !important;
   }
 }
+
+/* --- Choice (MVP-045) -----------------------------------------------------
+ *
+ * Hover, active e a grade ficam em CSS e não em estilo inline porque
+ * pseudo-classes e media queries não existem em `style`. O componente mantém
+ * as medidas em `style` (elas vêm de PLAN.md §6 e ficam junto do código que as
+ * usa) e delega ao CSS o que só o CSS sabe fazer.
+ */
+
+/* `:hover` guardado por `@media (hover: hover)`: num tablet o navegador
+ * emula hover *depois* do toque, e o cartão ficaria "grudado" em destaque
+ * até o próximo toque em outro lugar. */
+@media (hover: hover) {
+  .poto-choice:hover:not(:disabled) {
+    border-color: var(--rust);
+    background: var(--rust-soft);
+  }
+}
+
+.poto-choice:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.poto-choice:disabled {
+  cursor: default;
+}
+
+/* Grade 2×2 das trilhas. Colapsa para uma coluna abaixo de 560px — o Galaxy
+ * Tab A11 em retrato tem 800px de largura, então a grade fica 2×2; o colapso
+ * atende telefone, que é o caso de quem abre a interface pelo próprio
+ * aparelho. */
+.poto-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+  width: 100%;
+}
+
+@media (max-width: 560px) {
+  .poto-grid {
+    grid-template-columns: 1fr;
+  }
+}
