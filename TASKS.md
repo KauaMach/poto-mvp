@@ -70,7 +70,7 @@
 | MVP-045 | Componente `<Choice>` | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-046 | Componente `<Panic>` com pressionar-e-segurar | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-047 | Componente `<Confirm>` | F5 | P0 | 042, 043 | ✅ Concluída |
-| MVP-048 | Cliente de API tipado | F6 | P0 | 010, 030 | Pendente |
+| MVP-048 | Cliente de API tipado | F6 | P0 | 010, 030 | ✅ Concluída |
 | MVP-049 | Shell do totem (header/main/footer) | F6 | P0 | 044 | Pendente |
 | MVP-050 | Tela inicial com as 4 trilhas | F6 | P0 | 045, 046, 049 | Pendente |
 | MVP-051 | Fluxo de acionamento e confirmação | F6 | P0 | 047, 048, 050 | Pendente |
@@ -1557,14 +1557,48 @@
 
 ### MVP-048 — Cliente de API tipado
 - **Descrição:** Camada única de acesso ao backend, com tipos derivados dos contratos.
-- **Prioridade:** P0 · **Depende de:** 010, 030 · **Status:** Pendente
-- **Arquivos:** `frontend/src/comum/{api.ts,tipos.ts}`
+- **Prioridade:** P0 · **Depende de:** 010, 030 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/comum/{api.ts,tipos.ts}`, `frontend/src/vite-env.d.ts`
 - **Critérios de aceitação:**
   - `novoEvento()` gera `evento_id` com `crypto.randomUUID()` **antes** do envio
   - `enviarEvento()`, `listarChamados()`, `ackChamado()`, `obterConfig()`
   - Base da API derivada de `location.origin` (dev usa proxy do Vite)
   - Erro de rede levanta exceção tipada para a fila tratar
-- **Como validar:** `npm run build` sem erro de tipo
+- **Como validar:** `npm run build` sem erro de tipo — verificado
+
+> **O `evento_id` nascer no cliente é o ponto mais importante do arquivo.** Ele é a chave
+> de idempotência: um evento que falhou, ficou na fila e foi reenviado carrega o **mesmo**
+> id, e o backend devolve o chamado existente em vez de criar um segundo alarme para a
+> mesma emergência. Gerar o id no momento do envio quebraria isso — cada tentativa teria
+> um id novo e a fila multiplicaria o chamado.
+>
+> **`crypto.randomUUID` exige contexto seguro**, e na rede local da universidade o totem
+> roda em **HTTP**, onde a API não existe. Há fallback com `crypto.getRandomValues`
+> montando um UUID v4 à mão: o que importa é unicidade, não unicidade criptográfica.
+>
+> **Dois tipos de erro, porque o tratamento é oposto.** `ErroRede` (rede caiu, DNS,
+> timeout) é candidato a enfileirar e reenviar; `ErroApi` (422, 404) significa que o envio
+> **chegou e foi recusado**, e reenviar o mesmo payload falharia igual. Sem a distinção, a
+> fila offline entraria em laço com um payload inválido.
+>
+> `AbortController` com teto de 8 s: `fetch` sem sinal de abortar espera o timeout do
+> sistema operacional, que pode passar de um minuto. Um totem não pode ficar preso nisso.
+>
+> O corpo de erro é lido como texto e só depois decodificado — um 502 de proxy devolve
+> HTML, e sem isso um erro de servidor viraria erro de parsing, confundindo o diagnóstico.
+>
+> Os tipos são escritos à mão e não gerados do OpenAPI: gerar exigiria um passo de build
+> acoplado a um backend rodando, e a Pi **não compila** o frontend (D1c). O preço é que a
+> divergência só apareceria em execução; a mitigação são os testes de contrato da MVP-039,
+> que cobram a forma das respostas pelo lado do servidor.
+>
+> `TOTEM_ID` vem de `VITE_POTO_TOTEM_ID` e não fixo no código: dois totens não poderiam
+> coexistir, e o painel precisa saber **de onde** veio o chamado para despachar a equipe ao
+> lugar certo.
+>
+> Nota de ferramenta: o `tsconfig` liga `erasableSyntaxOnly`, que proíbe propriedades
+> declaradas no construtor — a garantia de que apagar os tipos basta para rodar. As classes
+> de erro usam campos explícitos.
 
 ### MVP-049 — Shell do totem
 - **Descrição:** As três zonas de DESIGN.md §12: header, main centralizado, footer.
