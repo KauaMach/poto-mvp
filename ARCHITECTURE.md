@@ -92,6 +92,35 @@ notebook da central não precisam de CORS nem de configuração de endpoint.
 > repete — `vite build` emite o `index.html` com os assets já referenciados. A task
 > MVP-066 verifica isso explicitamente.
 
+### D1c — A Pi executa, não compila
+
+O frontend é construído na máquina de desenvolvimento e enviado pronto por `rsync`
+(`make deploy`). **Node não é instalado na Pi.** Três razões, em ordem de peso:
+
+1. **O toolchain é binário nativo por arquitetura.** Vite 8 usa Rolldown, e o ecossistema
+   ao redor é Rust compilado: `@rolldown/binding-linux-x64`, `lightningcss-linux-x64`,
+   `@oxlint/binding-linux-x64`. Na Pi o npm instalaria as variantes `arm64` — binários
+   **diferentes** dos usados nos testes. Construindo num lugar só, o artefato que roda é
+   literalmente o que foi validado.
+2. **A assimetria é de 600×:** 133 MB e 700 arquivos de ferramenta para produzir 220 KB e
+   2 arquivos de resultado. A Pi serve os 220 KB e nunca precisa saber que TypeScript existe.
+3. **Deploy de 1 segundo em vez de 3 minutos**, sem exigir internet na Pi — o rsync vai pela
+   LAN. Na véspera da apresentação, isso é a diferença entre testar 10 ajustes e testar 100.
+
+O cenário "só tenho a Pi" não existe na prática: o notebook que roda o painel está presente
+por definição na demonstração.
+
+**O risco que isso cria, e como é fechado.** Separar build de execução abre a porta para
+servir um artefato velho — alterar o código, esquecer de reconstruir, enviar a versão
+anterior, e depurar por uma hora um bug que já estava corrigido. Duas travas:
+
+- `make deploy` faz build **e** envio na mesma ação: não há como enviar sem reconstruir.
+- O `/health` expõe o build-id do frontend, então dá para confirmar qual artefato está no ar.
+
+**Isto também é o que escala.** Com dez totens, construir em cada um multiplica o tempo e a
+chance de um divergir. O caminho natural adiante — CI compila, publica o artefato, o deploy
+busca — já tem exatamente esta forma.
+
 ### D1b — Layout fluido, orientação-consciente
 
 A tela do totem é um tablet de **8.7"**, que é pequeno. Considerando DPR entre 1,5 e 2, o

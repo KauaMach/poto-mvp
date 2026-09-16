@@ -97,11 +97,12 @@
 | MVP-078 | Visualização no painel | F8b | P0 | 063, 075, 076 | Pendente |
 | MVP-079 | Custo de CPU e latência na Pi | F8b | P0 | 075, 076 | Pendente |
 | MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | Pendente |
+| MVP-066b | `make deploy` e build-id verificável | F9 | P0 | 066 | Pendente |
 | MVP-067 | Unit systemd na Pi (API) | F9 | P0 | 066 | Pendente |
 | MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | Pendente |
 | MVP-067c | Kiosk no Galaxy Tab A11 | F9 | P0 | 055b, 067b | Pendente |
 | ~~MVP-068~~ | ~~Daemon do botão GPIO~~ | — | **P2** | — | Fora do MVP |
-| MVP-069 | `install-pi.sh` | F9 | P0 | 067b | Pendente |
+| MVP-069 | `install-pi.sh` (sem Node) | F9 | P0 | 067b, 066b | Pendente |
 | MVP-070 | Teste de resiliência (Pi + tablet) | F9 | P0 | 069, 067c | Pendente |
 | MVP-071 | Seed e `make demo-reset` | F10 | P0 | 066 | Pendente |
 | MVP-072 | Roteiro de demo e plano B | F10 | P0 | 070, 071 | Pendente |
@@ -661,6 +662,8 @@
   - `triagem.modo` é `classificador` **somente** se o artefato está carregado; senão `heuristica`
   - Reporta provider de notificação e se o banco responde
   - Campo `avisos[]` alerta quando a triagem está degradada
+  - Expõe o **build-id do frontend**, para conferir se o artefato servido é o esperado
+    (mitiga o risco de artefato velho — ver MVP-066b)
 - **Como validar:** renomear o `.joblib`, reiniciar, e conferir que `/health` diz `heuristica`
 
 ### MVP-037 — `GET /config` e `GET /canais`
@@ -1142,7 +1145,34 @@
   - Fontes carregam de `/fonts/`
   - Funciona **sem** o servidor de desenvolvimento do Vite
   - uvicorn em `--host 0.0.0.0`: **acessível de outro dispositivo da rede**, não só de `localhost`
+  - O backend serve `dist/` **venha ele de onde vier** — build local ou artefato copiado
 - **Como validar:** `make build && make backend`, depois `curl -o /dev/null -w "%{http_code}" http://<ip-da-pi>:8000/` → `200` **de outra máquina**
+
+> **A Pi não compila o frontend.** Verificado no smoke test: o toolchain do Vite 8 é Rust
+> compilado por arquitetura (`@rolldown/binding-linux-x64`, `lightningcss-linux-x64`,
+> `@oxlint/binding-linux-x64`). Construir na Pi usaria binários `arm64` **diferentes** dos
+> testados aqui — mesma fonte, ferramentas distintas. Construindo num lugar só, o artefato
+> que roda é literalmente o que foi testado.
+>
+> A assimetria também pesa: **133 MB e 700 arquivos de ferramenta para produzir 220 KB e 2
+> arquivos de resultado**. A Pi serve os 220 KB; nunca precisa saber que TypeScript existe.
+>
+> Consequência: `make deploy` (MVP-069b) constrói aqui e envia por rsync. Node não é
+> instalado na Pi.
+
+### MVP-066b — `make deploy` e build-id verificável
+- **Descrição:** Um comando só que constrói e envia, mais um jeito de confirmar qual build está no ar.
+- **Prioridade:** P0 · **Depende de:** 066 · **Status:** Pendente
+- **Arquivos:** `Makefile`, `frontend/build-id`, `backend/app/api/sistema.py`
+- **Critérios de aceitação:**
+  - `make deploy` executa **build e rsync na mesma ação** — não existe enviar sem reconstruir
+  - Exclui `.venv/`, `node_modules/`, `__pycache__/`, `*.db` do envio
+  - O build grava um identificador (hash do bundle) que o `/health` expõe
+  - Comparar o build-id local com o do `/health` da Pi diz se o artefato está atualizado
+- **Como validar:** alterar uma string na tela, `make deploy`, e conferir que o build-id do `/health` da Pi mudou
+- **Por que existe:** é a mitigação do único risco real de separar build e execução — **artefato velho**.
+  Alterar o código, esquecer de reconstruir e enviar a versão antiga é um bug silencioso que
+  custa uma hora de depuração. Amarrando build e envio num comando, não dá para esquecer.
 
 ### MVP-067 — Unit systemd na Pi
 - **Descrição:** Um único serviço que sobe sozinho no boot. Sem unit de kiosk (o navegador
@@ -1189,16 +1219,27 @@
 
 ### MVP-069 — `install-pi.sh`
 - **Descrição:** Script idempotente que transforma uma Pi limpa num totem.
-- **Prioridade:** P0 · **Depende de:** 067, 068 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 067b · **Status:** Pendente
 - **Arquivos:** `deploy/install-pi.sh`
 - **Critérios de aceitação:**
-  - Instala dependências de apt, `uv`, Node e `avahi-daemon`
-  - Roda `make setup` e `make build`
-  - Copia as duas units, `systemctl enable --now`
+  - Instala `uv`, `avahi-daemon` e `python3-picamera2` (apt) — **não instala Node**
+  - Cria o venv com `--system-site-packages` apontando para `/usr/bin/python3`, para o
+    `picamera2` do apt ser visível, e roda `uv sync --extra midia`
+  - Treina o classificador (`make train-clf`) — o artefato não é versionado
+  - Copia a unit `poto-api.service` e faz `systemctl enable --now`
   - Cria `.env` a partir do exemplo se não existir
   - **Imprime ao final as URLs** (`http://poto.local:8000` e `http://<ip>:8000`) para apontar o tablet
   - **Idempotente**: rodar duas vezes não quebra nada
 - **Como validar:** executar 2× numa Pi limpa e, do tablet, abrir a URL impressa
+
+> **Node saiu da lista.** O frontend é construído na máquina de desenvolvimento e enviado
+> pronto (MVP-066b). Isso poupa **133 MB e 700 arquivos** na Pi, elimina uma toolchain que
+> precisaria de atualização e manutenção, e dispensa internet no momento do deploy — o rsync
+> vai pela LAN.
+>
+> **Medido no smoke test de 16/09:** `uv sync --extra dev` levou **7,7 s** em aarch64, com
+> wheels prontos e nas mesmas versões do PC de desenvolvimento (scikit-learn 1.9.1,
+> scipy 1.18.1, numpy 2.5.3). O risco de compilar scipy por horas na Pi não existe.
 
 ### MVP-070 — Teste de resiliência (Pi + tablet)
 - **Descrição:** Provar que o conjunto se recupera sozinho, incluindo a queda de rede que

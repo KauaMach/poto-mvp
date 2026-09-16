@@ -14,12 +14,15 @@
 
 ---
 
-> ### ⚠️ Estado atual: planejamento concluído, implementação não iniciada
+> ### Estado atual: Fases 1 e 2 concluídas, Fase 3 em andamento
 >
-> Este repositório contém o **plano completo** do MVP. O código ainda não existe —
-> a primeira task é a [MVP-001](TASKS.md#mvp-001--estrutura-de-diretórios-do-projeto).
-> Os comandos abaixo descrevem o alvo, e passam a funcionar conforme as tasks da
-> **Fase 1** forem concluídas.
+> **19 de 82 tasks · 307 testes passando.** Prontos: domínio, catálogo de canais,
+> roteador determinístico, persistência SQLite com idempotência e máquina de estados
+> append-only. Em construção: triagem e merge protetivo (Fase 3).
+>
+> Ainda não existem: API HTTP (Fase 4), interface (Fases 5–6) e deploy (Fase 9) — os
+> alvos do Makefile que dependem deles avisam em qual task chegam. Progresso detalhado
+> em [TASKS.md](TASKS.md).
 
 ---
 
@@ -51,7 +54,7 @@ A primeira explica a fila offline e o roteamento determinístico. A segunda expl
 |---|---|
 | [`PLAN.md`](PLAN.md) | Escopo do MVP, stack e por que cada escolha, roadmap, riscos |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Arquitetura, decisões técnicas, API, banco, fluxos |
-| [`TASKS.md`](TASKS.md) | As 72 tasks com critérios de aceitação e status |
+| [`TASKS.md`](TASKS.md) | As 82 tasks com critérios de aceitação e status |
 | [`CLAUDE.md`](CLAUDE.md) | Diretrizes do projeto (autoria de commits) |
 
 ---
@@ -61,7 +64,7 @@ A primeira explica a fila offline e o roteamento determinístico. A segunda expl
 | Ferramenta | Versão | Para quê |
 |---|---|---|
 | [`uv`](https://docs.astral.sh/uv/) | ≥ 0.4 | Backend Python |
-| [Node.js](https://nodejs.org) | ≥ 20 | Build do frontend |
+| [Node.js](https://nodejs.org) | ≥ 20 | Build do frontend — **só na máquina de desenvolvimento**, não na Pi |
 | Python | ≥ 3.11 | Runtime do backend |
 
 Não é necessário Docker, Postgres, Redis nem Ollama.
@@ -84,7 +87,7 @@ make dev       # backend :8000 + frontend :5173
 | 📊 Painel da central | http://localhost:5173/painel |
 | 📘 API / OpenAPI | http://localhost:8000/docs |
 
-> `make setup` treina o classificador de triagem (77 exemplos, poucos segundos). **Não pule
+> `make setup` treina o classificador de triagem (105 exemplos, poucos segundos). **Não pule
 > esta etapa** — sem o modelo, a triagem cai numa heurística de palavras-chave que erra
 > casos críticos. O `GET /api/v1/health` diz honestamente qual motor está ativo.
 
@@ -119,8 +122,9 @@ cp backend/.env.example backend/.env
 | `make backend` | Só a API (`:8000`) |
 | `make frontend` | Só o frontend (`:5173`) |
 | `make build` | Build de produção — o backend passa a servir tudo em `:8000` |
+| `make deploy` | Constrói e envia para a Pi por rsync, num comando só |
 | `make test` | Suíte completa (pytest) |
-| `make lint` | ruff + eslint |
+| `make lint` | ruff + oxlint |
 | `make train-clf` | Retreina o classificador e reporta a acurácia |
 | `make seed` | Chamados de exemplo |
 | `make demo-reset` | Limpa o banco, semeia e reinicia os serviços |
