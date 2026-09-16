@@ -43,7 +43,7 @@
 | MVP-018 | Testes de persistência e idempotência | F2 | P0 | 015–017 | ✅ Concluída |
 | MVP-019 | Portar datasets de triagem | F3 | P0 | 002 | ✅ Concluída |
 | MVP-020 | Classificador TF-IDF + LogReg | F3 | P0 | 019 | ✅ Concluída |
-| MVP-021 | Script de treino e avaliação | F3 | P0 | 020 | Pendente |
+| MVP-021 | Script de treino e avaliação | F3 | P0 | 020 | ✅ Concluída |
 | MVP-022 | Heurística de palavras-chave | F3 | P0 | 009 | Pendente |
 | MVP-023 | **Merge protetivo** | F3 | P0 | 012, 020, 022 | Pendente |
 | MVP-024 | Fachada `triar()` | F3 | P0 | 023 | Pendente |
@@ -499,15 +499,33 @@
 
 ### MVP-021 — Script de treino e avaliação
 - **Descrição:** Treinar no dataset e reportar acurácia no held-out mais latência.
-- **Prioridade:** P0 · **Depende de:** 020 · **Status:** Pendente
-- **Arquivos:** `backend/scripts/train_classificador.py`
+- **Prioridade:** P0 · **Depende de:** 020 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/scripts/train_classificador.py`, `Makefile`
 - **Critérios de aceitação:**
   - Treina em `triagem_dataset.json`, avalia em `bench_dataset.json`
   - Imprime acurácia de tipo, de gravidade, latência média e p95
   - **Linha de base a bater: ≥ 83% tipo, ≥ 85% gravidade, < 10 ms**
   - Salva em `POTO_CLF_PATH` (default `app/data/triagem_clf.joblib`)
   - Executa em menos de 30 s
-- **Como validar:** `make train-clf` e conferir os números
+- **Como validar:** `make train-clf` e conferir os números — **3,5 s**, dentro da linha de base
+
+> **A linha de base virou portão, não relatório.** O script sai com código **1** quando o
+> resultado fica abaixo do piso, então uma regressão **para o `make setup`** em vez de
+> passar despercebida. Isso importa porque um classificador ruim não produz erro em
+> produção — ele só manda gente para o canal errado, em silêncio. `--permitir-regressao`
+> libera para experimentação.
+>
+> Verificado degradando o treino para 12 exemplos: 31,0% tipo, 45,2% gravidade,
+> **23 subestimações** — e saída 1. Com a flag, saída 0.
+>
+> O relatório inclui a **direção do erro de gravidade**, que é a métrica que mais importa:
+> acurácia trata todo erro como igual, mas superestimar custa uma notificação a mais
+> enquanto subestimar manda alguém em risco imediato para um canal de orientação.
+>
+> **Bug encontrado e corrigido durante a própria task:** `--saida` redirecionava só a
+> escrita, e a avaliação continuava lendo o artefato antigo de `POTO_CLF_PATH` — o script
+> reportava números de um modelo diferente do que acabara de treinar. Foi o que fez o
+> primeiro teste do portão passar quando deveria falhar.
 
 ### MVP-022 — Heurística de palavras-chave
 - **Descrição:** Rede de segurança final, sem nenhuma dependência externa.

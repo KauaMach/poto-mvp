@@ -72,7 +72,7 @@ lint: ## Verifica backend (ruff) e frontend (oxlint)
 
 train-clf: ## Treina o classificador de triagem e reporta a acurácia
 	$(call exige,$(BACKEND)/scripts/train_classificador.py,MVP-021)
-	cd $(BACKEND) && uv run python scripts/train_classificador.py
+	cd $(BACKEND) && uv run python scripts/train_classificador.py $(ARGS)
 
 seed: ## Popula o banco com chamados de exemplo
 	$(call exige,$(BACKEND)/app/seed.py,MVP-071)
