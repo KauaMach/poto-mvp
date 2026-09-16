@@ -279,3 +279,26 @@
   font-family: var(--font-ui);
   font-size: 13px;
 }
+
+/* --- Contador de SLA (MVP-064) -------------------------------------------- */
+
+.poto-sla {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: var(--space-xs);
+}
+
+/* Faixa cheia, não texto solto: o SLA expirado é a informação que não pode
+ * passar batida numa lista de vinte cartões. É o mesmo tratamento da captura
+ * de referência. */
+.poto-sla-expirado {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--crit);
+  border-radius: var(--r-xs);
+  padding: var(--space-xs) var(--space-sm);
+  margin-top: var(--space-xs);
+}

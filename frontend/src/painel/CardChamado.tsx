@@ -10,12 +10,15 @@
  * este é um painel de emergência.
  *
  * As ações do operador (MVP-063) ficam no rodapé e só aparecem em chamado que
- * ainda espera alguém. O contador de SLA é a MVP-064.
+ * ainda espera alguém. O contador de SLA (MVP-064) aparece pela mesma condição
+ * — e só onde há prazo: `orientacao` traz `null` no `/config`, que é informação
+ * e não ausência dela (não há urgência a proteger numa dúvida de ouvidoria).
  */
 import { useCallback, useState } from "react";
 import { ackChamado, atualizarChamado } from "../comum/api";
 import type { Chamado, StatusChamado } from "../comum/tipos";
 import { Sym } from "../componentes/Sym";
+import { ContadorSLA } from "./ContadorSLA";
 import {
   ABERTOS,
   COR_GRAVIDADE,
@@ -46,7 +49,7 @@ type Props = {
   slaSegundos: number | null;
 };
 
-export function CardChamado({ chamado, onMudou }: Props) {
+export function CardChamado({ chamado, onMudou, slaSegundos }: Props) {
   const [ocupado, setOcupado] = useState(false);
   const aberto = ABERTOS.has(chamado.status);
 
@@ -119,6 +122,13 @@ export function CardChamado({ chamado, onMudou }: Props) {
           </span>
         )}
       </p>
+
+      {/* Duas condições, e as duas importam. `aberto`: um chamado encerrado
+        * não tem prazo a correr. `slaSegundos !== null`: `orientacao` não
+        * escalona, e um contador ali sugeriria urgência que não existe. */}
+      {aberto && slaSegundos !== null && (
+        <ContadorSLA chamado={chamado} segundos={slaSegundos} />
+      )}
 
       {chamado.texto_livre && (
         /* Itálico e entre aspas: é a voz de quem pediu ajuda, não texto do

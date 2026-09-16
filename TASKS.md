@@ -87,7 +87,7 @@
 | MVP-061 | Card de chamado com gravidade | F8 | P0 | 060 | ✅ Concluída |
 | MVP-062 | WebSocket em tempo real no painel | F8 | P0 | 035, 060 | ✅ Concluída |
 | MVP-063 | ACK e mudança de estado | F8 | P0 | 033, 061 | ✅ Concluída |
-| MVP-064 | Contador de SLA ao vivo | F8 | P0 | 037, 061 | Pendente |
+| MVP-064 | Contador de SLA ao vivo | F8 | P0 | 037, 061 | ✅ Concluída |
 | MVP-065 | Filtros e busca | F8 | P1 | 060 | Pendente |
 | MVP-073 | Detecção de dispositivos + `GET /dispositivos` | F8b | P0 | 026 | Pendente |
 | MVP-074 | Captura de vídeo (picamera2 / V4L2) | F8b | P0 | 073 | Pendente |
@@ -2278,14 +2278,44 @@
 
 ### MVP-064 — Contador de SLA ao vivo
 - **Descrição:** O prazo correndo na tela — o fail-safe visível.
-- **Prioridade:** P0 · **Depende de:** 037, 061 · **Status:** Pendente
-- **Arquivos:** `frontend/src/painel/CardChamado.tsx`
+- **Prioridade:** P0 · **Depende de:** 037, 061 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/painel/{ContadorSLA,CardChamado}.tsx`,
+  `frontend/src/estilos/painel.css`
 - **Critérios de aceitação:**
   - "Responder em M:SS" regressivo, atualizando a cada segundo
   - Prazos vindos de `GET /config` — **não hardcoded**
   - Ao estourar, faixa "SLA expirado"
   - Sem contador em `orientacao`
-- **Como validar:** criar chamado crítico e observar até estourar os 120 s
+- **Como validar:** criar chamado crítico e observar até estourar os 120 s — verificado
+  com os prazos reais do `/config`: `1:54` em 5 s de vida, `0:10` em 110 s, faixa
+  "SLA expirado" em 121 s; e `7:59` para um `risco_potencial` de 121 s
+
+> **É o fail-safe visível.** O worker escalona sozinho quando o prazo estoura (MVP-038),
+> mas se o operador só descobre depois, o escalonamento automático deixa de ser rede de
+> segurança e passa a ser o caminho normal — e o fallback é sempre uma escolha pior que a
+> resposta de quem estava de plantão.
+>
+> **Os prazos vêm de `GET /config`, e a razão é concreta:** escrevê-los aqui faria mudar
+> 120 para 90 no backend deixar a tela mostrando o prazo antigo, e o cartão diria "faltam
+> 30 s" para um chamado que o worker já escalonou. Verificado que nenhum prazo de SLA está
+> escrito à mão no painel.
+>
+> **Conta a partir de `created_at`, o relógio do servidor** — o mesmo que o worker usa.
+> Usar `timestamp_local` faria a tela e o worker discordarem sobre quando o prazo venceu, e
+> a discordância apareceria como "SLA expirado" num cartão que o backend ainda considera no
+> prazo.
+>
+> Relê `Date.now()` em vez de decrementar um contador: com a aba em segundo plano o
+> navegador estrangula o `setInterval`, e um decremento ficaria atrasado — mostrando tempo
+> que já passou. É a mesma decisão do cronômetro do alerta ativo (MVP-054).
+>
+> Duas condições para aparecer, e as duas importam: `aberto`, porque um chamado encerrado
+> não tem prazo a correr; e `slaSegundos !== null`, porque `orientacao` não escalona e um
+> contador ali sugeriria urgência que não existe. O `null` do `/config` é **informação** —
+> diz que aquele nível não tem prazo — e não ausência de dado.
+>
+> O "SLA expirado" é faixa cheia e não texto solto: é a informação que não pode passar
+> batida numa lista de vinte cartões.
 
 ### MVP-065 — Filtros e busca
 - **Descrição:** Encontrar um chamado entre muitos.
