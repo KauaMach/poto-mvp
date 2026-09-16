@@ -74,7 +74,7 @@
 | MVP-049 | Shell do totem (header/main/footer) | F6 | P0 | 044 | ✅ Concluída |
 | MVP-050 | Tela inicial com as 4 trilhas | F6 | P0 | 045, 046, 049 | ✅ Concluída |
 | MVP-051 | Fluxo de acionamento e confirmação | F6 | P0 | 047, 048, 050 | ✅ Concluída |
-| MVP-052 | Retorno automático à tela inicial | F6 | P0 | 051 | Pendente |
+| MVP-052 | Retorno automático à tela inicial | F6 | P0 | 051 | ✅ Concluída |
 | MVP-053 | Modo discreto | F6 | P0 | 051 | Pendente |
 | MVP-054 | Tela de alerta ativo (pânico) | F6 | P0 | 031, 051 | Pendente |
 | MVP-055 | Layout fluido: tablet (2 orientações) e desktop | F6 | P0 | 050, 054 | Pendente |
@@ -1720,13 +1720,39 @@
 
 ### MVP-052 — Retorno automático à tela inicial
 - **Descrição:** O totem sempre volta sozinho ao repouso.
-- **Prioridade:** P0 · **Depende de:** 051 · **Status:** Pendente
-- **Arquivos:** `frontend/src/totem/telas/Confirmacao.tsx`
+- **Prioridade:** P0 · **Depende de:** 051 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/totem/telas/Confirmacao.tsx`,
+  `frontend/src/totem/Totem.tsx`, `frontend/scripts/verificar-prazos.mjs`
 - **Critérios de aceitação:**
   - **5 s** discreto · **12 s** crítico · **9 s** demais
   - Timer limpo ao desmontar (sem vazamento)
   - Alerta ativo de pânico **não** tem retorno automático — é persistente
-- **Como validar:** cronometrar cada variante
+- **Como validar:** cronometrar cada variante; `npm run check-prazos` confere a tabela
+  contra esta própria linha do TASKS.md
+
+> **Por que os prazos são diferentes.** Discreto é o mais curto porque a tela não deve
+> ficar aberta mais do que o necessário se alguém puder estar olhando por cima do ombro.
+> Crítico é o mais longo porque o protocolo precisa ser lido e anotado, possivelmente por
+> quem está com a mão tremendo.
+>
+> Os números são verificados por script, lendo **esta linha do TASKS.md** como fonte —
+> mesmo princípio do `verificar-tokens.mjs`. Alguém "arredondando" os 12 s do crítico para
+> 8 passaria despercebido de outro modo, e é justamente o crítico que precisa dos 12.
+> Verificado que pega deriva real.
+>
+> **O critério do pânico persistente não estava implementado e foi corrigido aqui.** A
+> MVP-051 mandava o pânico para a mesma tela de confirmação, que voltava ao repouso em 12 s
+> — contradizendo `alerta_ativo`, o único estado persistente do sistema (MVP-031). Quem
+> está em pânico não deve ver o totem voltar ao repouso enquanto espera: pareceria que o
+> pedido foi cancelado. A prop `persistente` desliga o timer, e a MVP-054 substitui essa
+> tela pela de alerta ativo completa.
+>
+> O `clearTimeout` na limpeza do efeito não é formalidade: sem ele, acionar duas vezes em
+> sequência deixaria dois timers vivos e o segundo devolveria o totem ao início no meio da
+> confirmação seguinte — ou durante um alerta ativo.
+>
+> `onVoltar` fica num `ref`: sem isso um callback recriado pelo pai reiniciaria o timer a
+> cada render e o totem **nunca** voltaria ao repouso.
 
 ### MVP-053 — Modo discreto
 - **Descrição:** A trilha mulher não pode deixar rastro na tela.

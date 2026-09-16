@@ -22,7 +22,13 @@ import type { Trilha } from "./trilhas";
 type Estado =
   | { tela: "inicio" }
   | { tela: "enviando" }
-  | { tela: "confirmado"; resultado: EventoOut; offline: boolean }
+  | {
+      tela: "confirmado";
+      resultado: EventoOut;
+      offline: boolean;
+      /** Pânico: não volta sozinho ao repouso (MVP-052). */
+      persistente?: boolean;
+    }
   | { tela: "erro"; mensagem: string };
 
 export function Totem() {
@@ -65,6 +71,10 @@ export function Totem() {
       setEstado({
         tela: "confirmado",
         offline: false,
+        /* `alerta_ativo` é o único estado persistente do sistema. A tela do
+         * pânico não se fecha sozinha — a MVP-054 a substitui pela tela de
+         * alerta ativo completa, com cronômetro e escalonamento. */
+        persistente: true,
         resultado: {
           chamado_id: panico.chamado_id,
           status: panico.status,
@@ -92,6 +102,7 @@ export function Totem() {
         <Confirmacao
           resultado={estado.resultado}
           offline={estado.offline}
+          persistente={estado.persistente}
           onVoltar={voltar}
         />
       </Shell>

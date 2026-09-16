@@ -7,8 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "oxlint && npm run check-tokens",
-    "check-tokens": "node scripts/verificar-tokens.mjs"
+    "lint": "oxlint && npm run check-tokens && npm run check-prazos",
+    "check-tokens": "node scripts/verificar-tokens.mjs",
+    "check-prazos": "node scripts/verificar-prazos.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",

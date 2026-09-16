@@ -32,6 +32,14 @@ type Props = {
   onVoltar: () => void;
   /** Evento ficou na fila offline (MVP-057): não houve resposta do servidor. */
   offline?: boolean;
+  /** Desliga o retorno automático.
+   *
+   * Existe para o pânico: `alerta_ativo` é o único estado persistente do
+   * sistema (MVP-031), e uma tela que se fecha sozinha contradiria isso. Quem
+   * está em pânico não deve ver o totem voltar ao repouso enquanto espera —
+   * pareceria que o pedido foi cancelado.
+   */
+  persistente?: boolean;
 };
 
 /** Qual das três variantes do `<Confirm>` usar, a partir do que o backend disse. */
@@ -44,13 +52,20 @@ export function varianteDe(resultado: EventoOut): VarianteConfirm {
   return "padrao";
 }
 
-function prazoDe(variante: VarianteConfirm): number {
+/** Quanto tempo a confirmação fica na tela, pela variante. Exportada para que
+ * a verificação de prazos não duplique a tabela. */
+export function prazoDe(variante: VarianteConfirm): number {
   if (variante === "neutral") return RETORNO_MS.discreto;
   if (variante === "critico") return RETORNO_MS.critico;
   return RETORNO_MS.padrao;
 }
 
-export function Confirmacao({ resultado, onVoltar, offline = false }: Props) {
+export function Confirmacao({
+  resultado,
+  onVoltar,
+  offline = false,
+  persistente = false,
+}: Props) {
   const variante = varianteDe(resultado);
   /* `ref` para o callback: sem isto, um `onVoltar` recriado pelo pai reiniciaria
    * o timer a cada render e o totem nunca voltaria ao repouso. */
@@ -68,12 +83,13 @@ export function Confirmacao({ resultado, onVoltar, offline = false }: Props) {
   }, [resultado]);
 
   useEffect(() => {
+    if (persistente) return;
     const timer = window.setTimeout(() => voltar.current(), prazoDe(variante));
     /* Limpeza obrigatória: sem ela, acionar duas vezes em sequência deixaria
      * dois timers vivos e o segundo devolveria o totem ao início no meio da
-     * confirmação seguinte. */
+     * confirmação seguinte — ou, pior, durante um alerta ativo. */
     return () => window.clearTimeout(timer);
-  }, [variante]);
+  }, [variante, persistente]);
 
   return (
     <Confirm
