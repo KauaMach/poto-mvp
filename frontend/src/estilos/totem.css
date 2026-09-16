@@ -310,10 +310,3 @@
   }
 }
 
-/* O painel da central é aberto no notebook, mas nada impede alguém de abri-lo
- * no tablet. Ele **precisa** rolar — a lista de chamados é longa — então
- * cancela o `overflow: hidden` do shell do totem. */
-.poto-painel {
-  min-height: 100dvh;
-  overflow: auto;
-}

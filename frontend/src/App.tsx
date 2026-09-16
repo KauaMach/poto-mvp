@@ -12,6 +12,7 @@
  */
 
 import { lazy, Suspense } from "react";
+import { Painel } from "./painel/Painel";
 import { Totem } from "./totem/Totem";
 
 /* Import dinâmico e guardado por `import.meta.env.DEV`, que é uma constante
@@ -38,7 +39,7 @@ function rotaAtual(): Rota {
 
 export function App() {
   const rota = rotaAtual();
-  if (rota === "painel") return <PainelPlaceholder />;
+  if (rota === "painel") return <Painel />;
   if (rota === "galeria" && Galeria) {
     return (
       <Suspense fallback={null}>
@@ -49,17 +50,3 @@ export function App() {
   return <Totem />;
 }
 
-// --- Placeholder ------------------------------------------------------------
-// Substituído pela tela real na MVP-060.
-
-function PainelPlaceholder() {
-  /* `poto-painel` cancela o `overflow: hidden` do shell do totem: a lista de
-   * chamados é longa e **precisa** rolar, inclusive se o painel for aberto no
-   * tablet (critério da MVP-055). */
-  return (
-    <main className="poto-painel">
-      <h1>P.O.T.O — Painel da central</h1>
-      <p>Scaffold ativo. A lista de chamados chega na MVP-060.</p>
-    </main>
-  );
-}

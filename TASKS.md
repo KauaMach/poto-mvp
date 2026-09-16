@@ -83,7 +83,7 @@
 | MVP-057 | Fila offline em `localStorage` | F7 | P0 | 048 | ✅ Concluída |
 | MVP-058 | Dreno automático e badge de fila | F7 | P0 | 057 | ✅ Concluída |
 | MVP-059 | Re-triagem protetiva no dreno | F7 | P0 | 023, 058 | ✅ Concluída |
-| MVP-060 | Shell e lista do painel | F8 | P0 | 032, 042 | Pendente |
+| MVP-060 | Shell e lista do painel | F8 | P0 | 032, 042 | ✅ Concluída |
 | MVP-061 | Card de chamado com gravidade | F8 | P0 | 060 | Pendente |
 | MVP-062 | WebSocket em tempo real no painel | F8 | P0 | 035, 060 | Pendente |
 | MVP-063 | ACK e mudança de estado | F8 | P0 | 033, 061 | Pendente |
@@ -2119,14 +2119,44 @@
 
 ### MVP-060 — Shell e lista do painel
 - **Descrição:** Visão operacional dos chamados.
-- **Prioridade:** P0 · **Depende de:** 032, 042 · **Status:** Pendente
-- **Arquivos:** `frontend/src/painel/Painel.tsx`, `ListaChamados.tsx`
+- **Prioridade:** P0 · **Depende de:** 032, 042 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/painel/{Painel,ListaChamados}.tsx`,
+  `frontend/src/painel/{rotulos,ordenacao}.ts`, `frontend/src/estilos/painel.css`
 - **Critérios de aceitação:**
   - Rota `/painel` no mesmo build
   - Carrega `GET /chamados` no mount
   - Mais recentes primeiro; críticos no topo
   - Estado vazio com mensagem clara
-- **Como validar:** `make seed` e abrir `/painel`
+- **Como validar:** `make seed` e abrir `/painel` — ordenação verificada:
+  `CRITICO-2min > crit-encerrado > potencial > ouv-recente > ouv-1min`
+
+> **"Mais recentes primeiro; críticos no topo" são duas regras em conflito, e a ordem
+> entre elas é a decisão.** Gravidade vence; entre iguais, o mais recente. É o que resolve
+> o caso que uma lista cronológica erra: um risco imediato de dois minutos atrás empurrado
+> para baixo por três dúvidas de ouvidoria que chegaram depois. Há um terceiro critério que
+> o plano não pede — **aberto antes de resolvido** — porque um encerrado no topo ocupa o
+> lugar de algo que ainda espera alguém.
+>
+> A lista é **estado local atualizado por WebSocket** (MVP-062), não recarregada em laço.
+> Um `setInterval` buscando `/chamados` a cada 5 s custaria tráfego constante e ainda
+> chegaria até 5 s atrasado — e o requisito é "acende em menos de 1 s". O `GET /chamados`
+> acontece uma vez, no mount, como ponto de partida.
+>
+> `aplicar()` insere ou substitui **no lugar**, indexando por `chamado_id`: sem isso um
+> `atualizado` faria a lista piscar inteira e perderia a posição de rolagem de quem está
+> lendo.
+>
+> O erro de carga distingue `ErroApi` de falha genérica, porque a causa mais provável de um
+> 401 aqui é o token do painel — e "não foi possível carregar" mandaria o operador procurar
+> no lugar errado.
+>
+> O painel **religa a seleção de texto** que o `base.css` desliga para o kiosk: aqui se
+> copia protocolo. E o `.poto-painel` cancela o `overflow: hidden` do shell do totem.
+>
+> `ordenar` fica em arquivo próprio: importá-la de `ListaChamados` arrastaria
+> `CardChamado` → `api.ts` → `import.meta.env`, que não existe no Node e tornaria a função
+> impossível de testar fora do navegador. O cartão nasce aqui como esqueleto — a leitura em
+> um relance é a MVP-061, as ações a MVP-063 e o SLA a MVP-064.
 
 ### MVP-061 — Card de chamado com gravidade
 - **Descrição:** O cartão que o operador lê em um relance.

@@ -1,0 +1,145 @@
+/* Painel da central — MVP-060.
+ *
+ * Separado do `totem.css` porque as necessidades são opostas: o totem não rola
+ * e tem uma tela por vez; o painel é uma superfície de trabalho com lista longa,
+ * aberta por horas.
+ */
+
+.poto-painel {
+  min-height: 100dvh;
+  /* Cancela o `overflow: hidden` do shell do totem — a lista precisa rolar,
+   * inclusive se o painel for aberto no tablet (MVP-055). */
+  overflow: auto;
+  background: var(--paper);
+  /* O painel é lido, não tocado: seleção de texto liberada para copiar um
+   * protocolo. O `base.css` a desliga globalmente por causa do kiosk. */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.poto-painel-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  padding: var(--space-md) clamp(16px, 3vw, 32px);
+  background: var(--bg);
+  border-bottom: 1.5px solid var(--line);
+  /* Fica visível na rolagem: o indicador de conexão é o que diz se a lista
+   * abaixo está viva, e some justamente quando alguém desce para procurar. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.poto-painel-marca {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.poto-painel-subtitulo {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.poto-painel-corpo {
+  padding: clamp(16px, 3vw, 32px);
+}
+
+.poto-vazio {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  color: var(--muted);
+  text-align: center;
+  padding: var(--space-xxl) var(--space-lg);
+  max-width: 48ch;
+  margin: 0 auto;
+}
+
+/* Grade de cartões. `auto-fill` com mínimo de 320px: uma coluna no tablet,
+ * três num notebook, quatro numa tela grande — sem ponto de quebra escrito à
+ * mão para cada um. */
+.poto-lista {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-md);
+  align-items: start;
+}
+
+/* --- Cartão: esqueleto (MVP-060) -----------------------------------------
+ *
+ * A borda de gravidade, o chip e o relato chegam na MVP-061; as ações na
+ * MVP-063; o SLA na MVP-064.
+ */
+
+.poto-card {
+  background: var(--bg);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.poto-card-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.poto-protocolo {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.poto-card-titulo {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 19px;
+  line-height: 1.2;
+  color: var(--ink);
+  margin: var(--space-xs) 0;
+}
+
+.poto-card-linha {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.poto-card-rotulo {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  min-width: 62px;
+}
+
+.poto-card-rodape {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1.5px solid var(--line);
+}
+
+.poto-status {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--muted);
+}
