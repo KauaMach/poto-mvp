@@ -1,0 +1,162 @@
+"""Montagem da aplicação: ciclo de vida, CORS e o frontend estático.
+
+O ponto delicado aqui é a convivência entre a API e a aplicação de página
+única na mesma origem. Servir as duas do mesmo lugar é o que dispensa CORS e
+configuração de endpoint no cliente — mas exige que cada uma continue com o
+comportamento de erro que lhe cabe.
+"""
+
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app import config
+from app.main import criar_app
+
+
+@pytest.fixture
+def banco(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "teste.db"))
+    return tmp_path / "teste.db"
+
+
+@pytest.fixture
+def sem_frontend(tmp_path, monkeypatch):
+    """Estado de desenvolvimento: o Vite serve na 5173, não há build."""
+    monkeypatch.setattr(config, "FRONTEND_DIST", str(tmp_path / "dist-inexistente"))
+
+
+@pytest.fixture
+def com_frontend(tmp_path, monkeypatch):
+    """Simula o build enviado por `make deploy`."""
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<title>P.O.T.O</title>", encoding="utf-8")
+    (dist / "assets" / "app.js").write_text("// bundle", encoding="utf-8")
+    monkeypatch.setattr(config, "FRONTEND_DIST", str(dist))
+    return dist
+
+
+# --- Ciclo de vida ----------------------------------------------------------
+
+
+def test_lifespan_cria_o_banco(banco, sem_frontend):
+    """Idempotente e a cada start: uma Pi com cartão novo se reconstrói sozinha."""
+    assert not banco.exists()
+    with TestClient(criar_app()):
+        assert banco.exists()
+
+
+def test_health_responde(banco, sem_frontend):
+    with TestClient(criar_app()) as cliente:
+        r = cliente.get("/api/v1/health")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+
+
+def test_health_confirma_o_banco(banco, sem_frontend):
+    with TestClient(criar_app()) as cliente:
+        assert cliente.get("/api/v1/health").json()["banco"] is True
+
+
+def test_subir_duas_vezes_nao_quebra(banco, sem_frontend):
+    for _ in range(2):
+        with TestClient(criar_app()) as cliente:
+            assert cliente.get("/api/v1/health").status_code == 200
+
+
+# --- CORS -------------------------------------------------------------------
+
+
+def test_cors_nunca_e_curinga():
+    """`allow_origins=["*"]` num serviço que registra ocorrências de violência
+    seria entregar a API a qualquer página da internet."""
+    assert "*" not in config.CORS_ORIGINS
+
+
+def test_cors_vem_da_configuracao(banco, sem_frontend, monkeypatch):
+    monkeypatch.setattr(config, "CORS_ORIGINS", ["http://exemplo.local"])
+    with TestClient(criar_app()) as cliente:
+        r = cliente.get(
+            "/api/v1/health", headers={"Origin": "http://exemplo.local"}
+        )
+    assert r.headers.get("access-control-allow-origin") == "http://exemplo.local"
+
+
+def test_origem_desconhecida_nao_recebe_permissao(banco, sem_frontend, monkeypatch):
+    monkeypatch.setattr(config, "CORS_ORIGINS", ["http://exemplo.local"])
+    with TestClient(criar_app()) as cliente:
+        r = cliente.get("/api/v1/health", headers={"Origin": "http://invasor.com"})
+    assert "access-control-allow-origin" not in r.headers
+
+
+# --- Frontend ausente -------------------------------------------------------
+
+
+def test_sem_build_a_api_continua_de_pe(banco, sem_frontend):
+    """Em desenvolvimento não há `dist/` — o backend não pode se recusar a subir."""
+    with TestClient(criar_app()) as cliente:
+        assert cliente.get("/api/v1/health").status_code == 200
+
+
+# --- Frontend montado -------------------------------------------------------
+
+
+def test_raiz_serve_a_aplicacao(banco, com_frontend):
+    with TestClient(criar_app()) as cliente:
+        r = cliente.get("/")
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+
+
+@pytest.mark.parametrize("rota", ["/painel", "/painel/", "/rota-qualquer"])
+def test_rotas_da_aplicacao_recebem_o_index(banco, com_frontend, rota):
+    """A aplicação é de página única: o roteamento acontece no cliente, então
+    qualquer caminho desconhecido precisa entregar o index e deixar o React
+    decidir. Sem isto, abrir `/painel` direto no navegador daria 404."""
+    with TestClient(criar_app()) as cliente:
+        r = cliente.get(rota)
+    assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+
+
+def test_assets_sao_servidos(banco, com_frontend):
+    with TestClient(criar_app()) as cliente:
+        assert cliente.get("/assets/app.js").status_code == 200
+
+
+# --- A fronteira entre a API e a aplicação ----------------------------------
+
+
+def test_rota_de_api_inexistente_devolve_404_json(banco, com_frontend):
+    """O caso que o fallback de SPA quase quebrou.
+
+    Devolver `index.html` com 200 aqui faria um cliente receber HTML onde
+    espera JSON, e mascararia erro de digitação no endpoint — o pior tipo de
+    falha, porque não parece falha.
+    """
+    with TestClient(criar_app()) as cliente:
+        r = cliente.get("/api/v1/nao-existe")
+    assert r.status_code == 404
+    assert "application/json" in r.headers["content-type"]
+    assert "detail" in r.json()
+
+
+@pytest.mark.parametrize("rota", ["/api/qualquer", "/api/v1/tambem-nao", "/api"])
+def test_nada_sob_api_cai_no_fallback(banco, com_frontend, rota):
+    with TestClient(criar_app()) as cliente:
+        r = cliente.get(rota)
+    assert r.status_code == 404
+    assert "text/html" not in r.headers.get("content-type", "")
+
+
+def test_api_funciona_com_o_frontend_montado(banco, com_frontend):
+    """O estático é montado na raiz e poderia sombrear a API."""
+    with TestClient(criar_app()) as cliente:
+        assert cliente.get("/api/v1/health").status_code == 200
+
+
+def test_docs_continuam_acessiveis(banco, com_frontend):
+    with TestClient(criar_app()) as cliente:
+        assert cliente.get("/docs").status_code == 200

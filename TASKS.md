@@ -48,7 +48,7 @@
 | MVP-023 | **Merge protetivo** ★ | F3 | P0 | 012, 020, 022 | ✅ Concluída |
 | MVP-024 | Fachada `triar()` | F3 | P0 | 023 | ✅ Concluída |
 | MVP-025 | Suíte de regressão de segurança | F3 | P0 | 024 | ✅ Concluída |
-| MVP-026 | App FastAPI + lifespan + estático | F4 | P0 | 004, 014 | Pendente |
+| MVP-026 | App FastAPI + lifespan + estático | F4 | P0 | 004, 014 | ✅ Concluída |
 | MVP-027 | Hub de WebSocket | F4 | P0 | 026 | Pendente |
 | MVP-028 | Registry de canais + provider `log` | F4 | P0 | 011 | Pendente |
 | MVP-029 | Provider `webhook` | F4 | P0 | 028 | Pendente |
@@ -659,14 +659,27 @@
 
 ### MVP-026 — App FastAPI + lifespan + estático
 - **Descrição:** Criar a aplicação, inicializar o banco no startup e montar o build do frontend.
-- **Prioridade:** P0 · **Depende de:** 004, 014 · **Status:** Pendente
-- **Arquivos:** `backend/app/main.py`
+- **Prioridade:** P0 · **Depende de:** 004, 014 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/main.py`, `backend/app/api/sistema.py`, `backend/tests/test_main.py`
 - **Critérios de aceitação:**
   - `lifespan` chama `init_db()` e inicia o worker de SLA
   - Se `frontend/dist/` existe, é montado na raiz servindo `index.html`
   - CORS restrito por `POTO_CORS_ORIGINS` (default: só localhost) — **nunca `*`**
   - `main.py` só monta routers; nenhuma regra de negócio
-- **Como validar:** `make backend` e `curl localhost:8000/api/v1/health`
+- **Como validar:** `make backend` e `curl localhost:8000/api/v1/health` — 20 testes
+
+> **A fronteira entre a API e a aplicação exigiu cuidado.** Servir as duas da mesma
+> origem é o que dispensa CORS e configuração de endpoint no cliente, mas o fallback de
+> página única quase quebrou os erros da API: `/api/v1/nao-existe` devolvia **200 com
+> HTML** em vez de 404 em JSON. Um cliente receberia HTML onde espera JSON, e um erro de
+> digitação no endpoint ficaria invisível — o pior tipo de falha, porque não parece falha.
+> Corrigido e travado por teste.
+>
+> Um segundo caso apareceu só porque o teste parametrizava: `/api` exato não casava com
+> o prefixo `api/` e escapava pelo fallback.
+>
+> O worker de SLA **não** é iniciado aqui ainda — ele chega na MVP-038, com o ponto de
+> ligação já documentado no `lifespan`.
 
 ### MVP-027 — Hub de WebSocket
 - **Descrição:** Gerenciar conexões do painel e transmitir eventos.
