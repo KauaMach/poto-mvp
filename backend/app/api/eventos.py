@@ -1,7 +1,10 @@
-"""`POST /eventos` — o acionamento de uma trilha.
+"""Acionamento: `POST /eventos` (trilha) e `POST /panico` (alerta imediato).
 
-É aqui que tudo que as fases anteriores construíram se encontra, na ordem que
-o projeto fixou:
+Os dois endpoints abertos do sistema. **Nenhum dos dois exige credencial**, por
+decisão de projeto: um totem em pânico não pode falhar por autenticação.
+
+`/eventos` é o caminho principal, e é aqui que tudo que as fases anteriores
+construíram se encontra, na ordem que o projeto fixou:
 
     triar() → rotear() → merge_acionamento() → criar_chamado() → broadcast → notificar
 
@@ -10,21 +13,40 @@ estão nessa sequência por causa do tempo: o painel precisa acender em menos de
 um segundo, e a notificação externa pode levar até dez. Inverter faria a
 central esperar pelo WhatsApp.
 
+`/panico` reaproveita quase tudo, e as diferenças estão documentadas na segunda
+metade do arquivo.
+
 **Este arquivo não decide nada sobre gravidade.** Ele chama `merge_acionamento()`
 e obedece. O defeito que originou o módulo de merge estava exatamente num
 endpoint como este, que sobrescrevia a gravidade do roteador com a inferida do
 texto — e fazia a palavra "socorro" rebaixar um chamado.
+
+Por serem abertos, os dois têm uma restrição a mais: **nada que saia daqui pode
+revelar contato institucional.** Ver `FALHA_GENERICA`, mais abaixo.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, BackgroundTasks
 
-from .. import canais, db
+from .. import canais, config, db
 from ..hub import hub
-from ..models import EventoIn, EventoOut, Gravidade, InstrucaoTotem, StatusChamado
+from ..models import (
+    CanalOpcao,
+    CanalResultado,
+    EventoIn,
+    EventoOut,
+    Gravidade,
+    InstrucaoTotem,
+    OrigemAcionamento,
+    PanicoIn,
+    PanicoOut,
+    StatusChamado,
+    TipoOcorrencia,
+)
 from ..triagem import merge_acionamento, rotear, triar
 from ..triagem.roteador import Roteamento
 
@@ -162,3 +184,153 @@ async def _notificar(chamado: dict, canal: str) -> None:
             await hub.broadcast("atualizado", atualizado)
     except Exception:
         logger.exception("%s: erro ao notificar em segundo plano", chamado["chamado_id"])
+
+
+# ===========================================================================
+# POST /panico
+# ===========================================================================
+#
+# O pânico difere do acionamento por trilha em três pontos, e cada um tem uma
+# razão diferente:
+#
+#   1. Não passa por triagem de texto. Não há texto — e não haveria tempo de
+#      escrever. É crítico por definição, não por inferência.
+#   2. Aciona os canais internos em PARALELO. Sequencial, o segundo canal
+#      esperaria o primeiro; num pânico os dois precisam saber junto.
+#   3. Nasce em `alerta_ativo`, o único estado que não fecha sozinho. Um pânico
+#      só sai desse estado por ação humana na central.
+
+
+@router.post("/panico", status_code=201, response_model=PanicoOut)
+async def panico(evento: PanicoIn) -> PanicoOut:
+    """Alerta imediato, com broadcast paralelo para os canais internos.
+
+    Ao contrário de `/eventos`, aqui a notificação **é aguardada**: a resposta
+    carrega `resultados`, e é por eles que a tela decide se oferece os botões de
+    escalonamento manual. Os dois canais correm em paralelo, então o teto é o de
+    um provider, não a soma.
+    """
+    routing = rotear(TipoOcorrencia.seguranca, evento.modo, emergencia=True)
+
+    # Sem triagem: `merge_acionamento` com `triagem=None` devolve o roteamento
+    # intacto. Passar por aqui de todo modo mantém uma única porta para a
+    # decisão final — não existe caminho no sistema que a contorne.
+    decisao = merge_acionamento(routing)
+
+    chamado = db.criar_chamado(
+        _registro_panico(evento, decisao),
+        decisao,
+        status=StatusChamado.alerta_ativo,
+    )
+
+    if chamado["_duplicado"]:
+        # Reenvio de um pânico. Não aciona de novo, mas reconstrói `resultados`
+        # do banco: a tela pode estar recarregando depois de perder a conexão e
+        # precisa saber o que já aconteceu.
+        return _resposta_panico(chamado, _resultados_gravados(chamado), duplicado=True)
+
+    await hub.broadcast("novo_chamado", chamado)
+    resultados = await _acionar_em_paralelo(chamado)
+
+    return _resposta_panico(chamado, resultados)
+
+
+def _registro_panico(evento: PanicoIn, decisao: Roteamento) -> dict:
+    """O pânico é sempre `seguranca`, sempre origem `panico`, nunca tem relato."""
+    return {
+        "evento_id": str(evento.evento_id),
+        "totem_id": evento.totem_id,
+        "tipo_ocorrencia": decisao["tipo"],
+        "modo": decisao["modo"],
+        "origem_acionamento": OrigemAcionamento.panico,
+        "texto_livre": None,
+        "timestamp_local": evento.timestamp_local,
+    }
+
+
+async def _acionar_em_paralelo(chamado: dict) -> list[CanalResultado]:
+    """Aciona `CANAIS_INTERNOS` ao mesmo tempo, contendo a falha de cada um.
+
+    `return_exceptions=True` pelo mesmo motivo do hub: a falha de um canal não
+    pode impedir que o outro seja acionado **nem** que seja registrado. Num
+    pânico, ficar sem o CSV porque a Sala Lilás está mal configurada seria o
+    pior resultado possível.
+    """
+    canais_internos = list(config.CANAIS_INTERNOS)
+    retornos = await asyncio.gather(
+        *(canais.notificar(chamado, canal) for canal in canais_internos),
+        return_exceptions=True,
+    )
+
+    resultados = []
+    for canal, retorno in zip(canais_internos, retornos, strict=True):
+        if isinstance(retorno, BaseException):
+            logger.exception(
+                "%s: erro ao acionar %s", chamado["chamado_id"], canal, exc_info=retorno
+            )
+            sucesso = False
+        else:
+            sucesso, _ = retorno
+        resultados.append(
+            CanalResultado(
+                canal=canal,
+                nome=config.nome_canal(canal),
+                sucesso=sucesso,
+                detalhe=None if sucesso else FALHA_GENERICA,
+            )
+        )
+    return resultados
+
+
+# O que a tela vê quando um canal não foi acionado.
+#
+# Genérico de propósito. `/panico` é um endpoint ABERTO — sem credencial, porque
+# um totem em pânico não pode falhar por autenticação — e o detalhe real vem do
+# provider, que repassa o corpo da resposta do webhook. Esse corpo pode ecoar o
+# número que foi discado ("invalid number 5586..."), e devolvê-lo aqui entregaria
+# os contatos institucionais a qualquer um que alcance a API. O detalhe completo
+# fica em `notificacoes`, atrás do token do painel.
+FALHA_GENERICA = "não foi possível acionar este canal"
+
+
+def _resultados_gravados(chamado: dict) -> list[CanalResultado]:
+    """Reconstrói `resultados` das notificações já registradas."""
+    return [
+        CanalResultado(
+            canal=n["canal"],
+            nome=config.nome_canal(n["canal"]),
+            sucesso=n["sucesso"],
+            detalhe=None if n["sucesso"] else FALHA_GENERICA,
+        )
+        for n in db.listar_notificacoes(chamado["chamado_id"])
+        if not n["escalonamento"]
+    ]
+
+
+def _resposta_panico(
+    chamado: dict, resultados: list[CanalResultado], *, duplicado: bool = False
+) -> PanicoOut:
+    return PanicoOut(
+        chamado_id=chamado["chamado_id"],
+        status=chamado["status"],
+        gravidade=chamado["gravidade"],
+        resultados=resultados,
+        escalonamento_disponivel=_escalonamento_disponivel(),
+        duplicado=duplicado,
+    )
+
+
+def _escalonamento_disponivel() -> list[CanalOpcao]:
+    """As autoridades do estado, oferecidas para acionamento MANUAL.
+
+    O sistema nunca disca para elas sozinho: registra que um humano acionou.
+    Robo-discar 190 ou 192 por classificação automática seria irresponsável — e
+    é o tipo de decisão que a máquina não toma.
+
+    Sem `destino`: o contrato em `models.py` é explícito, e este endpoint é
+    aberto.
+    """
+    return [
+        CanalOpcao(canal=canal, nome=config.nome_canal(canal))
+        for canal in config.CANAIS_ESTADO
+    ]

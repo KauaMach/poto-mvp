@@ -53,7 +53,7 @@
 | MVP-028 | Registry de canais + provider `log` | F4 | P0 | 011 | ✅ Concluída |
 | MVP-029 | Provider `webhook` | F4 | P0 | 028 | ✅ Concluída |
 | MVP-030 | `POST /eventos` | F4 | P0 | 024, 027, 028 | ✅ Concluída |
-| MVP-031 | `POST /panico` | F4 | P0 | 030 | Pendente |
+| MVP-031 | `POST /panico` | F4 | P0 | 030 | ✅ Concluída |
 | MVP-032 | `GET /chamados` e `GET /chamados/{id}` | F4 | P0 | 016 | Pendente |
 | MVP-033 | `POST /chamados/{id}/ack` e `PATCH` | F4 | P0 | 016, 027 | Pendente |
 | MVP-034 | `POST /chamados/{id}/escalonar` | F4 | P0 | 028, 032 | Pendente |
@@ -846,15 +846,51 @@
 
 ### MVP-031 — `POST /panico`
 - **Descrição:** Broadcast paralelo para os canais internos, com status persistente.
-- **Prioridade:** P0 · **Depende de:** 030 · **Status:** Pendente
-- **Arquivos:** `backend/app/api/eventos.py`
+- **Prioridade:** P0 · **Depende de:** 030 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/api/eventos.py`, `backend/tests/test_api_panico.py`
 - **Critérios de aceitação:**
   - Roteia como `seguranca` + `emergencia=True`, **sem passar por triagem de texto**
   - Aciona `CANAIS_INTERNOS` em paralelo (`asyncio.gather`)
   - Status final `alerta_ativo` — persistente, não fecha sozinho
   - Devolve `escalonamento_disponivel` com os 4 canais do estado
   - Idempotente por `evento_id`
-- **Como validar:** `uv run pytest tests/test_api_panico.py`
+- **Como validar:** `uv run pytest tests/test_api_panico.py` — 42 testes
+
+> **Ao contrário de `/eventos`, aqui a notificação é aguardada.** Não é inconsistência: a
+> resposta carrega `resultados`, e é por eles que a tela decide se oferece os botões de
+> escalonamento. Como os canais correm em paralelo, o teto é o de um provider e não a
+> soma dos dois.
+>
+> **`alerta_ativo` não se move.** Nem pelo sucesso da notificação (que em `/eventos`
+> levaria a `notificado`), nem pela falha dela. Um pânico cujo aviso não saiu é *mais*
+> grave, não menos — e é exatamente quando o escalonamento manual importa. Por isso o
+> status é fixado no `criar_chamado` e o resultado da notificação não o toca.
+>
+> **O endpoint é aberto, e isso cria um vazamento sutil.** O `detalhe` do provider
+> carrega o corpo da resposta do webhook (MVP-029), que pode ecoar o número discado —
+> `{"error": "invalid number 5586..."}` é resposta plausível da Evolution API. Repassá-lo
+> entregaria os contatos institucionais a qualquer um que alcance a API. A resposta usa
+> `FALHA_GENERICA`; o detalhe real fica em `notificacoes`, atrás do token do painel.
+>
+> Reenvio reconstrói `resultados` do banco em vez de devolver lista vazia: a tela pode
+> estar recarregando depois de perder a conexão, e uma lista vazia a faria parecer que
+> nenhum canal foi acionado.
+>
+> **O paralelismo é provado por sincronização, não por cronômetro.** Uma `asyncio.Barrier`
+> de duas vagas só libera quando os dois acionamentos chegam nela; numa implementação
+> sequencial o primeiro esperaria para sempre, e o `wait_for` converte isso em falha em
+> vez de travar a suíte.
+>
+> Duas notas honestas sobre cobertura:
+>
+> 1. **`emergencia=True` é inobservável na trilha `seguranca`.** `rotear(seguranca)`
+>    devolve resultado idêntico com e sem a flag — ela só afeta a trilha de saúde. O
+>    parâmetro é passado por clareza de contrato, mas nenhum teste pode distinguir sua
+>    presença. O que é testável, e está testado, é a consequência: `risco_imediato`.
+> 2. **O descarte de `texto_livre` tem duas camadas independentes** — `PanicoIn` não
+>    declara o campo (e o Pydantic ignora extras) *e* `_registro_panico` fixa `None`.
+>    Quebrar só uma não falha teste nenhum; as duas juntas falham. Não remover nenhuma
+>    das duas acreditando que a outra cobre.
 
 ### MVP-032 — `GET /chamados` e `GET /chamados/{id}`
 - **Descrição:** Leitura para o painel.
