@@ -70,15 +70,18 @@
   align-items: start;
 }
 
-/* --- Cartão: esqueleto (MVP-060) -----------------------------------------
+/* --- Cartão (MVP-061) -----------------------------------------------------
  *
- * A borda de gravidade, o chip e o relato chegam na MVP-061; as ações na
- * MVP-063; o SLA na MVP-064.
+ * As ações ficam na MVP-063 e o SLA na MVP-064.
  */
 
 .poto-card {
   background: var(--bg);
   border: 1.5px solid var(--line);
+  /* A borda de 5px na cor da gravidade é o que permite varrer vinte cartões
+   * sem ler nenhum. A cor vem por `style` porque depende do dado. */
+  border-left-width: 5px;
+  border-left-style: solid;
   border-radius: var(--r-md);
   padding: var(--space-md);
   display: flex;
@@ -92,6 +95,25 @@
   justify-content: space-between;
   gap: var(--space-sm);
   flex-wrap: wrap;
+}
+
+.poto-chip-gravidade {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.poto-ponto {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  flex: 0 0 auto;
 }
 
 .poto-protocolo {
@@ -142,4 +164,25 @@
   font-family: var(--font-ui);
   font-size: 13px;
   color: var(--muted);
+}
+
+/* O relato é a voz de quem pediu ajuda, não texto do sistema. */
+.poto-card-relato {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--ink);
+  background: var(--paper);
+  border-radius: var(--r-sm);
+  padding: var(--space-xs) var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+/* Aviso de evento que veio da fila offline. `--warn` e não `--crit`: não é
+ * mais grave, é mais antigo — e usar a cor de crítico competiria com a borda
+ * de gravidade, que é o sinal principal. */
+.poto-atraso {
+  font-size: 11px;
+  color: var(--warn);
+  font-weight: 500;
 }

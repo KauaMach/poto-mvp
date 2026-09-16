@@ -84,7 +84,7 @@
 | MVP-058 | Dreno automático e badge de fila | F7 | P0 | 057 | ✅ Concluída |
 | MVP-059 | Re-triagem protetiva no dreno | F7 | P0 | 023, 058 | ✅ Concluída |
 | MVP-060 | Shell e lista do painel | F8 | P0 | 032, 042 | ✅ Concluída |
-| MVP-061 | Card de chamado com gravidade | F8 | P0 | 060 | Pendente |
+| MVP-061 | Card de chamado com gravidade | F8 | P0 | 060 | ✅ Concluída |
 | MVP-062 | WebSocket em tempo real no painel | F8 | P0 | 035, 060 | Pendente |
 | MVP-063 | ACK e mudança de estado | F8 | P0 | 033, 061 | Pendente |
 | MVP-064 | Contador de SLA ao vivo | F8 | P0 | 037, 061 | Pendente |
@@ -2160,14 +2160,42 @@
 
 ### MVP-061 — Card de chamado com gravidade
 - **Descrição:** O cartão que o operador lê em um relance.
-- **Prioridade:** P0 · **Depende de:** 060 · **Status:** Pendente
-- **Arquivos:** `frontend/src/painel/CardChamado.tsx`
+- **Prioridade:** P0 · **Depende de:** 060 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/painel/CardChamado.tsx`, `frontend/src/estilos/painel.css`
 - **Critérios de aceitação:**
   - **Borda esquerda de 5px** na cor da gravidade: `--crit` · `--warn` · `--info`
   - Protocolo em tabular, tipo, canal roteado, horário, totem
   - Chip de status legível
   - Gravidade tem cor **+ rótulo** (nunca só cor)
 - **Como validar:** conferir contra `../poto-pitch/capturas-de-tela/Tela-Central-painel.png`
+
+> **A borda de 5px é o que permite varrer vinte cartões sem ler nenhum** — e é justamente
+> por ser tão eficiente que ela não pode vir sozinha. O chip ao lado diz "Imediato",
+> "Potencial" ou "Orientação". Cor como único sinal excluiria os ~8% dos homens com alguma
+> deficiência na percepção de vermelho e verde, num painel de emergência.
+>
+> **A lacuna que a MVP-059 documentou está resolvida aqui.** Um evento que ficou na fila
+> offline chega com payload **idêntico** a um ao vivo — é isso que preserva a idempotência
+> — e o único sinal disponível é a distância entre `timestamp_local` (relógio do tablet) e
+> `created_at` (relógio do servidor). Sem a marca "esperou N h na fila", o operador trata um
+> pedido de horas atrás como se estivesse acontecendo agora.
+>
+> O aviso só aparece **acima de 2 minutos**: abaixo disso a diferença é relógio
+> dessincronizado, não fila. Marcar tudo transformaria o aviso em ruído, e um aviso que
+> aparece sempre não é lido. E ele usa `--warn`, não `--crit`: o chamado não é mais grave,
+> é mais antigo — a cor de crítico competiria com a borda de gravidade, que é o sinal
+> principal.
+>
+> O `timestamp_local` continua sendo tratado como não confiável: serve de **indício
+> visual** e nunca para rotear nem para o SLA. `Date.parse` inválido devolve `null` em vez
+> de derrubar o cartão.
+>
+> O relato vai em itálico e entre aspas porque é a **voz de quem pediu ajuda**, não texto
+> do sistema — a distinção importa quando se lê rápido.
+>
+> A hora é formatada no cliente: `created_at` vem em UTC e o navegador converte para o
+> fuso de quem olha. É por isso que o backend não formata data — ele não sabe onde o painel
+> está.
 
 ### MVP-062 — WebSocket em tempo real
 - **Descrição:** O painel acende sozinho, sem recarregar.
