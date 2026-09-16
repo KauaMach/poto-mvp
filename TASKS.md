@@ -76,7 +76,7 @@
 | MVP-051 | Fluxo de acionamento e confirmação | F6 | P0 | 047, 048, 050 | ✅ Concluída |
 | MVP-052 | Retorno automático à tela inicial | F6 | P0 | 051 | ✅ Concluída |
 | MVP-053 | Modo discreto | F6 | P0 | 051 | ✅ Concluída |
-| MVP-054 | Tela de alerta ativo (pânico) | F6 | P0 | 031, 051 | Pendente |
+| MVP-054 | Tela de alerta ativo (pânico) | F6 | P0 | 031, 051 | ✅ Concluída |
 | MVP-055 | Layout fluido: tablet (2 orientações) e desktop | F6 | P0 | 050, 054 | Pendente |
 | MVP-055b | Manifest e modo autônomo no tablet | F6 | P0 | 055 | Pendente |
 | MVP-056 | Acessibilidade AA | F6 | P1 | 055 | Pendente |
@@ -1795,8 +1795,10 @@
 
 ### MVP-054 — Tela de alerta ativo (pânico)
 - **Descrição:** Estado persistente com cronômetro e escalonamento manual.
-- **Prioridade:** P0 · **Depende de:** 031, 051 · **Status:** Pendente
-- **Arquivos:** `frontend/src/totem/telas/AlertaAtivo.tsx`
+- **Prioridade:** P0 · **Depende de:** 031, 051 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/totem/telas/AlertaAtivo.tsx`,
+  `frontend/src/comum/{useCronometro.ts,useEventosWS.ts}`,
+  `frontend/src/totem/Totem.tsx`, `frontend/src/estilos/totem.css`
 - **Critérios de aceitação:**
   - Fundo `--rust`, ícone pulsante, protocolo grande em tabular
   - Cronômetro `MM:SS` desde o acionamento
@@ -1804,6 +1806,45 @@
   - 4 botões de escalonamento; cada um vira ✓ verde inline após acionar
   - **Não sai sozinho** — só pelo botão "Voltar ao início"
 - **Como validar:** acionar pânico, dar ACK no painel e ver o status mudar no totem
+
+> **O status ao vivo é o que diferencia esta tela de um cartaz.** Sem ele a pessoa não tem
+> como saber se o pedido chegou, e a única coisa que resta a fazer é tocar de novo. As três
+> informações respondem três perguntas de quem espera: o protocolo — "o pedido existe?";
+> o cronômetro — "há quanto tempo?"; o status — "alguém já viu?".
+>
+> Os textos são escritos do ponto de vista de **quem espera**, não do sistema: "Central
+> recebeu" e não "reconhecido". E `falha_notificacao` mostra "Aguardando central", não
+> "falhou" — a pessoa não pode fazer nada sobre isso, e a informação acionável é outra: os
+> botões de escalonamento logo abaixo.
+>
+> **O cronômetro conta a partir de um `Date`, não somando 1 por segundo.** A diferença
+> aparece quando o navegador estrangula o timer (aba em segundo plano, Android economizando
+> bateria): um contador incremental ficaria atrasado — e este cronômetro diz há quanto
+> tempo alguém está esperando socorro. O instante é capturado **antes** do POST: num webhook
+> lento a diferença chega a segundos, e é o tempo de espera real que importa.
+>
+> **O WebSocket filtra por `chamado_id`.** Sem isso, outro totem acionando ao mesmo tempo
+> mudaria o status desta tela. A reconexão tem espera crescente até 10 s: um totem em
+> alerta com a conexão caída não pode tentar a cada 100 ms — aquece o aparelho e enche o log
+> do servidor durante uma emergência — mas também não pode desistir. `onerror` não é
+> tratado de propósito: o navegador sempre dispara `onclose` depois dele, e tratar os dois
+> agendaria duas reconexões.
+>
+> O botão de escalonamento marca **antes** da resposta e **não volta** em caso de falha.
+> Desmarcar sugeriria "não acionei", e a pessoa tentaria de novo — mas ela já ligou, que é
+> o que o botão registra (MVP-034 grava o acionamento humano mesmo sem contato
+> configurado). O painel mostra o resultado real.
+>
+> `semCromo` esconde o header: um wordmark clicável ali daria um jeito acidental de sair de
+> um estado que é persistente de propósito. O foco é branco dentro da tela — o anel de
+> ferrugem do `base.css` é invisível sobre fundo ferrugem.
+>
+> Com movimento reduzido o pulso para mas o **anel permanece**: ele é o que distingue esta
+> tela de um cartaz estático.
+>
+> Removida a prop `persistente` que a MVP-052 havia acrescentado ao `Confirmacao` para
+> cobrir o pânico provisoriamente: com a tela real existindo, ela ficou sem consumidor, e
+> prop sem consumidor apodrece.
 
 ### MVP-055 — Layout fluido: tablet (duas orientações) e desktop
 - **Descrição:** A tela do totem é um **Galaxy Tab A11 de 8.7" (1340×800)** e precisa

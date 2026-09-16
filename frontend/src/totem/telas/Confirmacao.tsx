@@ -3,6 +3,11 @@
  * Envolve o `<Confirm>` do design system com o que é específico do totem: o
  * som e o **retorno automático ao repouso**.
  *
+ * Só as trilhas passam por aqui. O pânico tem tela própria — `AlertaAtivo`
+ * (MVP-054), que é persistente e não tem timer nenhum. Esta versão chegou a ter
+ * uma prop `persistente` para cobrir o pânico provisoriamente (MVP-052);
+ * removida quando a tela real existiu, para não ficar código sem consumidor.
+ *
  * Tudo que decide a aparência vem do `instrucao_totem` do backend. O cliente
  * não infere discrição, não escolhe mensagem e não decide se toca som — se
  * fizesse, a garantia de modo discreto passaria a depender de o frontend
@@ -32,14 +37,6 @@ type Props = {
   onVoltar: () => void;
   /** Evento ficou na fila offline (MVP-057): não houve resposta do servidor. */
   offline?: boolean;
-  /** Desliga o retorno automático.
-   *
-   * Existe para o pânico: `alerta_ativo` é o único estado persistente do
-   * sistema (MVP-031), e uma tela que se fecha sozinha contradiria isso. Quem
-   * está em pânico não deve ver o totem voltar ao repouso enquanto espera —
-   * pareceria que o pedido foi cancelado.
-   */
-  persistente?: boolean;
 };
 
 /** Qual das três variantes do `<Confirm>` usar, a partir do que o backend disse. */
@@ -60,12 +57,7 @@ export function prazoDe(variante: VarianteConfirm): number {
   return RETORNO_MS.padrao;
 }
 
-export function Confirmacao({
-  resultado,
-  onVoltar,
-  offline = false,
-  persistente = false,
-}: Props) {
+export function Confirmacao({ resultado, onVoltar, offline = false }: Props) {
   const variante = varianteDe(resultado);
   /* `ref` para o callback: sem isto, um `onVoltar` recriado pelo pai reiniciaria
    * o timer a cada render e o totem nunca voltaria ao repouso. */
@@ -83,13 +75,12 @@ export function Confirmacao({
   }, [resultado]);
 
   useEffect(() => {
-    if (persistente) return;
     const timer = window.setTimeout(() => voltar.current(), prazoDe(variante));
     /* Limpeza obrigatória: sem ela, acionar duas vezes em sequência deixaria
      * dois timers vivos e o segundo devolveria o totem ao início no meio da
-     * confirmação seguinte — ou, pior, durante um alerta ativo. */
+     * confirmação seguinte. */
     return () => window.clearTimeout(timer);
-  }, [variante, persistente]);
+  }, [variante]);
 
   return (
     <Confirm

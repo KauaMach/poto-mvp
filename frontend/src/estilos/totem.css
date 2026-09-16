@@ -95,3 +95,141 @@
   text-align: center;
   max-width: 42ch;
 }
+
+/* --- Alerta ativo (MVP-054) ----------------------------------------------- */
+
+.poto-alerta {
+  background: var(--rust);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(var(--space-md), 2.5vh, var(--space-lg));
+  text-align: center;
+  padding: clamp(20px, 4vh, 48px) var(--space-lg);
+  min-height: 100dvh;
+  width: 100%;
+}
+
+.poto-alerta-pulso {
+  width: 96px;
+  height: 96px;
+  border-radius: var(--r-pill);
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  animation: poto-pulso 1.6s ease-in-out infinite;
+}
+
+@keyframes poto-pulso {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.75;
+  }
+}
+
+/* Com movimento reduzido o pulso para, mas o anel **permanece**: ele é o que
+ * distingue esta tela de um cartaz estático. O reset global já zera a duração;
+ * isto garante que o elemento não fique num quadro intermediário translúcido. */
+@media (prefers-reduced-motion: reduce) {
+  .poto-alerta-pulso {
+    animation: none;
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.poto-alerta-status {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.6vw, 24px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.poto-alerta-legenda {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+/* Grande e tabular: é lido em voz alta para a central e copiado à mão. */
+.poto-alerta-protocolo {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 4.5vw, 40px);
+  letter-spacing: 0.04em;
+  margin-top: var(--space-xs);
+}
+
+.poto-alerta-cronometro {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 6vw, 56px);
+  line-height: 1;
+}
+
+.poto-alerta-escalonar {
+  width: 100%;
+  max-width: 560px;
+}
+
+.poto-alerta-botoes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.poto-escalonar {
+  min-height: var(--touch);
+  padding: var(--space-sm) var(--space-md);
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: #fff;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+}
+
+/* Acionado: vira ✓ verde inline e fica desabilitado. Não volta ao estado
+ * anterior nem em caso de falha — desmarcar sugeriria "não acionei", e a
+ * pessoa já ligou. */
+.poto-escalonar:disabled {
+  background: #fff;
+  color: var(--ink);
+  border-color: #fff;
+  cursor: default;
+}
+
+/* Foco branco: o anel de ferrugem do `base.css` é invisível sobre fundo
+ * ferrugem. */
+.poto-alerta :focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+.poto-alerta-voltar {
+  margin-top: var(--space-sm);
+  min-height: var(--touch);
+  padding: 0 var(--space-lg);
+  border-radius: var(--r-pill);
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  color: #fff;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}

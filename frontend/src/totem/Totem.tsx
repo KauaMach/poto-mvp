@@ -11,10 +11,12 @@
  */
 import { useCallback, useState } from "react";
 import { enviarEvento, enviarPanico, novoEvento, novoPanico } from "../comum/api";
-import type { EventoOut } from "../comum/tipos";
+import { beep } from "../comum/beep";
+import type { EventoOut, PanicoOut } from "../comum/tipos";
 import { useOnline } from "../comum/useOnline";
 import { Panic, PanicAjuda } from "../componentes/Panic";
 import { Shell } from "./Shell";
+import { AlertaAtivo } from "./telas/AlertaAtivo";
 import { Confirmacao } from "./telas/Confirmacao";
 import { Home } from "./telas/Home";
 import type { Trilha } from "./trilhas";
@@ -22,13 +24,11 @@ import type { Trilha } from "./trilhas";
 type Estado =
   | { tela: "inicio" }
   | { tela: "enviando" }
-  | {
-      tela: "confirmado";
-      resultado: EventoOut;
-      offline: boolean;
-      /** Pânico: não volta sozinho ao repouso (MVP-052). */
-      persistente?: boolean;
-    }
+  | { tela: "confirmado"; resultado: EventoOut; offline: boolean }
+  /* O pânico tem tela própria: persistente, com cronômetro e escalonamento
+   * (MVP-054). `desde` guarda o instante do acionamento — o cronômetro conta a
+   * partir dele, não de quando o componente montou. */
+  | { tela: "alerta"; alerta: PanicoOut; desde: Date }
   | { tela: "erro"; mensagem: string };
 
 export function Totem() {
@@ -62,32 +62,15 @@ export function Totem() {
   }, []);
 
   const acionarPanico = useCallback(async () => {
+    /* O instante é capturado **antes** do envio: o cronômetro conta desde o
+     * toque, não desde a resposta. Num webhook lento a diferença chega a
+     * segundos, e é o tempo de espera real que a pessoa precisa ver. */
+    const desde = new Date();
     setEstado({ tela: "enviando" });
     try {
-      const panico = await enviarPanico(novoPanico());
-      /* O pânico devolve `PanicoOut`, sem `instrucao_totem`. A tela de alerta
-       * ativo (MVP-054) é que consome esse formato; aqui ele é adaptado para a
-       * confirmação provisória. */
-      setEstado({
-        tela: "confirmado",
-        offline: false,
-        /* `alerta_ativo` é o único estado persistente do sistema. A tela do
-         * pânico não se fecha sozinha — a MVP-054 a substitui pela tela de
-         * alerta ativo completa, com cronômetro e escalonamento. */
-        persistente: true,
-        resultado: {
-          chamado_id: panico.chamado_id,
-          status: panico.status,
-          canal_roteado: "",
-          gravidade: panico.gravidade,
-          instrucao_totem: {
-            mensagem_tela: "Alerta enviado. Ajuda a caminho.",
-            feedback_sonoro: true,
-            tela_neutra: false,
-          },
-          duplicado: panico.duplicado,
-        },
-      });
+      const alerta = await enviarPanico(novoPanico());
+      beep();
+      setEstado({ tela: "alerta", alerta, desde });
     } catch {
       setEstado({
         tela: "erro",
@@ -96,13 +79,27 @@ export function Totem() {
     }
   }, []);
 
+  if (estado.tela === "alerta") {
+    /* `semCromo`: o alerta ativo ocupa a tela inteira. Um header com o
+     * wordmark clicável ali daria um jeito acidental de sair de um estado que
+     * é persistente de propósito. */
+    return (
+      <Shell online={online} fundo="var(--rust)" semCromo>
+        <AlertaAtivo
+          alerta={estado.alerta}
+          desde={estado.desde}
+          onVoltar={voltar}
+        />
+      </Shell>
+    );
+  }
+
   if (estado.tela === "confirmado") {
     return (
       <Shell online={online} onInicio={voltar}>
         <Confirmacao
           resultado={estado.resultado}
           offline={estado.offline}
-          persistente={estado.persistente}
           onVoltar={voltar}
         />
       </Shell>
