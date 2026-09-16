@@ -91,7 +91,7 @@
 | MVP-065 | Filtros e busca | F8 | P1 | 060 | ✅ Concluída |
 | MVP-073 | Detecção de dispositivos + `GET /dispositivos` | F8b | P0 | 026 | ✅ Concluída |
 | MVP-074 | Captura de vídeo (picamera2 / V4L2) | F8b | P0 | 073 | ✅ Concluída |
-| MVP-077 | **Sessão de mídia com auditoria** | F8b | P0 | 073, 017 | Pendente |
+| MVP-077 | **Sessão de mídia com auditoria** | F8b | P0 | 073, 017 | ✅ Concluída |
 | MVP-075 | Stream MJPEG | F8b | P0 | 074, 077 | Pendente |
 | MVP-076 | Captura e stream de áudio (ALSA) | F8b | P0 | 073, 077 | Pendente |
 | MVP-078 | Visualização no painel | F8b | P0 | 063, 075, 076 | Pendente |
@@ -2492,8 +2492,10 @@
 
 ### MVP-077 — Sessão de mídia com auditoria ★
 - **Descrição:** O controle que impede a câmera de virar vigilância. **Nenhum stream existe fora disso.**
-- **Prioridade:** P0 · **Depende de:** 073, 017 · **Status:** Pendente
-- **Arquivos:** `backend/app/midia/sessao.py`, `backend/app/api/midia.py`
+- **Prioridade:** P0 · **Depende de:** 073, 017 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/midia/sessao.py`, `backend/app/api/midia.py`,
+  `backend/app/db.py`, `backend/app/models.py`, `backend/app/sla.py`,
+  `backend/app/api/chamados.py`, `backend/tests/test_midia_sessao.py`
 - **Critérios de aceitação:**
   - `POST /chamados/{id}/midia {dispositivo_id}` → `{sessao_id, stream_url, expira_em}`
   - **Recusa** (`409`) se o chamado estiver `encerrado` ou `cancelado`
@@ -2501,7 +2503,57 @@
   - `DELETE /chamados/{id}/midia` encerra imediatamente
   - **Abertura e fechamento gravam linha de auditoria** com dispositivo, operador e duração
   - Sem sessão, os endpoints de stream devolvem `403` — **testado explicitamente**
-- **Como validar:** `uv run pytest tests/test_midia_sessao.py` — inclui o teste de que não há stream sem chamado ativo
+- **Como validar:** `uv run pytest tests/test_midia_sessao.py` — **27 testes**, incluindo
+  o de que não há stream sem chamado ativo
+
+> **A tabela `midia_auditoria` existe por razão política, não técnica.** Uma câmera e um
+> microfone num espaço público só são aceitáveis se cada ativação deixar rastro: quem
+> abriu, qual dispositivo, vinculada a qual chamado, por quanto tempo. Sem isso o totem é
+> indistinguível de vigilância, e a diferença entre as duas coisas **é** a auditabilidade.
+> Append-only pelos mesmos gatilhos do `estado_log` — um registro de acesso que pode ser
+> editado não serve para responder "quem olhou aquela câmera".
+>
+> **O par abertura/fechamento é o dado, não a abertura sozinha.** Uma linha só diria que
+> alguém olhou sem dizer por quanto tempo. Daí três caminhos de fechamento, todos
+> auditados: pelo operador (`DELETE`), por expiração, e **pelo encerramento do chamado**.
+>
+> Esse último é o caminho mais provável de a câmera ficar aberta na prática: o operador
+> resolve o atendimento, muda o estado e fecha a aba. Sem o acoplamento, a sessão só cairia
+> dez minutos depois — e a auditoria mostraria, com razão, a câmera aberta todo esse tempo.
+>
+> **A sessão da câmera não autoriza o microfone.** Áudio é mais invasivo que imagem, e sem
+> essa checagem um único pedido de vídeo daria acesso ao som do local.
+>
+> **As sessões vivem em memória, não no banco — de propósito.** Uma sessão não deve
+> sobreviver a um reinício: se o processo caiu, a captura caiu com ele, e uma sessão
+> ressuscitada autorizaria um stream que ninguém está assistindo. O que precisa persistir é
+> a auditoria, e ela está no banco.
+>
+> `sessao_id` é `secrets.token_urlsafe` e não sequencial: o id vai na URL do stream, e **a
+> sessão é a autorização** — um sequencial deixaria adivinhar a do vizinho.
+>
+> **404 e 409 são distintos e a diferença é informação.** 404 é "não existe"; 409 é "existe
+> e o estado não permite". O painel usa isso para saber se o dado dele está velho ou se o
+> pedido era inválido.
+>
+> A varredura de expiradas roda **no laço do worker de SLA**, não num timer próprio: a
+> cadência é a mesma, e um segundo worker seria mais uma tarefa para cancelar no
+> encerramento e mais um lugar onde uma exceção derruba algo em silêncio. Ela existe para a
+> sessão que **ninguém tentou usar** depois de expirar — sem ela, essa sessão ficaria sem
+> linha de fechamento e a auditoria mostraria uma câmera aberta para sempre.
+>
+> O campo `operador` guarda o endereço de quem chamou e se havia token, **sem fingir
+> identidade que o sistema não tem**: a MVP-040 dá um token compartilhado, não contas
+> individuais. Um `operador` com nome inventado seria pior que um IP honesto.
+>
+> A auditoria é exposta em `GET /chamados/{id}/midia/auditoria`: auditoria que exige acesso
+> ao servidor não é auditoria, é arquivo.
+>
+> Nota de processo: uma das minhas edições acrescentou o import em `sla.py` mas **não** a
+> chamada — o `ruff` acusou `F401: imported but unused` e o teste do worker falhou. O alvo
+> da substituição não casava porque a linha tinha um `if (n := ...) :` com espaço antes dos
+> dois-pontos, que eu vinha ignorando. As duas ferramentas apontaram o mesmo problema por
+> ângulos diferentes.
 
 ### MVP-078 — Visualização no painel
 - **Descrição:** O operador escolhe o dispositivo e vê/ouve, dentro do chamado.

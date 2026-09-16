@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from .. import canais, config, db
 from ..canais.log import mascarar
 from ..hub import hub
+from ..midia import sessao as sessoes_midia
 from ..models import (
     CanalResultado,
     ChamadoDetalhe,
@@ -175,6 +176,16 @@ async def atualizar(chamado_id: str, mudanca: ChamadoUpdate) -> ChamadoOut:
     )
     if chamado is None:
         raise HTTPException(status_code=404, detail="chamado não encontrado")
+
+    # Encerrar o chamado encerra a mídia (MVP-077). Deixar a câmera aberta
+    # depois de o atendimento acabar seria exatamente a vigilância que a sessão
+    # existe para impedir — e ninguém lembraria de fechar à mão.
+    if chamado["status"] in (StatusChamado.encerrado, StatusChamado.cancelado):
+        fechadas = sessoes_midia.fechar_do_chamado(
+            chamado_id, f"chamado {chamado['status']}"
+        )
+        if fechadas:
+            logger.info("%s: %d sessão(ões) de mídia encerrada(s)", chamado_id, fechadas)
 
     await _avisar(chamado)
     return ChamadoOut.model_validate(chamado)

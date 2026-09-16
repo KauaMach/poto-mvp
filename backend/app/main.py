@@ -77,6 +77,7 @@ def criar_app() -> FastAPI:
     app.include_router(chamados.router, prefix=API)
     app.include_router(chamados.router_ws, prefix=API)
     app.include_router(midia.router, prefix=API)
+    app.include_router(midia.router_stream, prefix=API)
 
     _montar_frontend(app)
     return app

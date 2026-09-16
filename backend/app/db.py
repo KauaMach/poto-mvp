@@ -69,6 +69,32 @@ CREATE TABLE IF NOT EXISTS notificacoes (
   created_at     TEXT NOT NULL
 );
 
+-- Auditoria de mídia (MVP-077).
+--
+-- **A razão de esta tabela existir é política, não técnica.** Uma câmera e um
+-- microfone num espaço público só são aceitáveis se cada ativação deixar
+-- rastro: quem abriu, qual dispositivo, vinculada a qual chamado, por quanto
+-- tempo. Sem isso o totem é indistinguível de vigilância, e a diferença entre
+-- as duas coisas é exatamente a auditabilidade.
+--
+-- Append-only pelos mesmos gatilhos do `estado_log`: um registro de acesso que
+-- pode ser editado não serve para responder "quem olhou aquela câmera".
+CREATE TABLE IF NOT EXISTS midia_auditoria (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  sessao_id      TEXT NOT NULL,
+  chamado_id     TEXT NOT NULL,
+  dispositivo_id TEXT NOT NULL,
+  dispositivo    TEXT,                   -- nome legível no momento da abertura
+  operador       TEXT,                   -- quem pediu; NULL sem autenticação
+  acao           TEXT NOT NULL,          -- abertura | fechamento | expiracao
+  motivo         TEXT,
+  duracao_seg    INTEGER,                -- só no fechamento
+  created_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_midia_sessao  ON midia_auditoria(sessao_id);
+CREATE INDEX IF NOT EXISTS idx_midia_chamado ON midia_auditoria(chamado_id);
+
 CREATE INDEX IF NOT EXISTS idx_notif_chamado   ON notificacoes(chamado_id);
 CREATE INDEX IF NOT EXISTS idx_estado_chamado  ON estado_log(chamado_id);
 CREATE INDEX IF NOT EXISTS idx_chamados_status ON chamados(status);
@@ -86,6 +112,14 @@ BEGIN SELECT RAISE(ABORT, 'estado_log é append-only'); END;
 CREATE TRIGGER IF NOT EXISTS estado_log_sem_delete
 BEFORE DELETE ON estado_log
 BEGIN SELECT RAISE(ABORT, 'estado_log é append-only'); END;
+
+CREATE TRIGGER IF NOT EXISTS midia_auditoria_sem_update
+BEFORE UPDATE ON midia_auditoria
+BEGIN SELECT RAISE(ABORT, 'midia_auditoria é append-only'); END;
+
+CREATE TRIGGER IF NOT EXISTS midia_auditoria_sem_delete
+BEFORE DELETE ON midia_auditoria
+BEGIN SELECT RAISE(ABORT, 'midia_auditoria é append-only'); END;
 """
 
 
@@ -446,6 +480,58 @@ def _notificacao(linha: sqlite3.Row) -> dict:
     dados["sucesso"] = bool(dados["sucesso"])
     dados["escalonamento"] = bool(dados["escalonamento"])
     return dados
+
+
+def registrar_midia(
+    sessao_id: str,
+    chamado_id: str,
+    dispositivo_id: str,
+    acao: str,
+    *,
+    dispositivo: str | None = None,
+    operador: str | None = None,
+    motivo: str | None = None,
+    duracao_seg: int | None = None,
+) -> None:
+    """Grava uma linha de auditoria de mídia (MVP-077).
+
+    Chamada na abertura **e** no fechamento de toda sessão. O par é o que
+    permite reconstruir por quanto tempo a câmera ficou aberta — uma linha só,
+    de abertura, diria que alguém olhou sem dizer por quanto tempo.
+    """
+    with conectar() as con:
+        con.execute(
+            """INSERT INTO midia_auditoria
+               (sessao_id, chamado_id, dispositivo_id, dispositivo, operador,
+                acao, motivo, duracao_seg, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                sessao_id,
+                chamado_id,
+                dispositivo_id,
+                dispositivo,
+                operador,
+                acao,
+                motivo,
+                duracao_seg,
+                agora_iso(),
+            ),
+        )
+
+
+def listar_auditoria_midia(chamado_id: str | None = None) -> list[dict]:
+    """Auditoria de mídia, em ordem cronológica.
+
+    Sem `chamado_id`, devolve tudo — é a visão que responde "quais câmeras
+    foram abertas esta semana", que é a pergunta de quem fiscaliza.
+    """
+    onde = "WHERE chamado_id = ?" if chamado_id else ""
+    valores = (chamado_id,) if chamado_id else ()
+    with conectar() as con:
+        linhas = con.execute(
+            f"SELECT * FROM midia_auditoria {onde} ORDER BY id", valores
+        ).fetchall()
+    return [dict(x) for x in linhas]
 
 
 def ack_chamado(chamado_id: str) -> dict | None:

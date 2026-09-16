@@ -295,6 +295,27 @@ class ChamadoUpdate(BaseModel):
     observacao: str | None = Field(default=None, max_length=2000)
 
 
+class MidiaIn(BaseModel):
+    """Pedido de sessão de mídia (MVP-077)."""
+
+    dispositivo_id: str = Field(examples=["csi:0"])
+
+
+class MidiaOut(BaseModel):
+    """Autorização concedida.
+
+    `stream_url` já vem montada com a sessão embutida: o painel não precisa
+    saber como compor a URL, e isso mantém o formato do token dentro do
+    backend.
+    """
+
+    sessao_id: str
+    stream_url: str
+    expira_em: int = Field(description="Segundos até a sessão expirar.")
+    dispositivo_id: str
+    tipo: str
+
+
 class EscalonamentoIn(BaseModel):
     """Acionamento manual de uma autoridade do estado.
 

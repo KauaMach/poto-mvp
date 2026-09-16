@@ -41,7 +41,7 @@ def _inserir_chamado(chamado_id="CALL-2026-000001", evento_id="uuid-a"):
 # --- Esquema ----------------------------------------------------------------
 
 
-def test_cria_as_tres_tabelas(banco):
+def test_cria_as_tabelas(banco):
     with db.conectar() as con:
         nomes = {
             r[0]
@@ -50,10 +50,13 @@ def test_cria_as_tres_tabelas(banco):
                 "AND name NOT LIKE 'sqlite_%'"
             )
         }
-    assert nomes == {"chamados", "estado_log", "notificacoes"}
+    # `midia_auditoria` entrou na MVP-077 — o rastro de cada ativação de câmera
+    # e microfone. A comparação é exata de propósito: uma tabela nova sem teste
+    # é uma tabela sem contrato.
+    assert nomes == {"chamados", "estado_log", "notificacoes", "midia_auditoria"}
 
 
-def test_cria_os_tres_indices(banco):
+def test_cria_os_indices(banco):
     with db.conectar() as con:
         nomes = {
             r[0]
@@ -62,7 +65,16 @@ def test_cria_os_tres_indices(banco):
                 "AND name NOT LIKE 'sqlite_%'"
             )
         }
-    assert nomes == {"idx_notif_chamado", "idx_estado_chamado", "idx_chamados_status"}
+    assert nomes == {
+        "idx_notif_chamado",
+        "idx_estado_chamado",
+        "idx_chamados_status",
+        # Auditoria de mídia (MVP-077): por sessão, para reconstruir o par
+        # abertura/fechamento, e por chamado, para responder "que câmeras foram
+        # abertas neste atendimento".
+        "idx_midia_sessao",
+        "idx_midia_chamado",
+    }
 
 
 def test_init_db_e_idempotente(banco):
@@ -164,3 +176,50 @@ def test_agora_iso_e_utc_e_ordenavel():
     b = db.agora_iso()
     assert a.endswith("+00:00")
     assert a <= b
+
+
+# --- Auditoria de mídia é append-only (MVP-077) -----------------------------
+#
+# Pelos mesmos gatilhos do `estado_log`, e pela mesma razão: um registro de
+# acesso que pode ser editado não serve para responder "quem olhou aquela
+# câmera". É o que separa um totem de um sistema de vigilância.
+
+
+def test_midia_auditoria_nao_aceita_update(banco):
+    db.registrar_midia("s1", "CALL-1", "csi:0", "abertura")
+
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        with db.conectar() as con:
+            con.execute("UPDATE midia_auditoria SET acao = 'nada'")
+
+
+def test_midia_auditoria_nao_aceita_delete(banco):
+    db.registrar_midia("s1", "CALL-1", "csi:0", "abertura")
+
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        with db.conectar() as con:
+            con.execute("DELETE FROM midia_auditoria")
+
+
+def test_abertura_e_fechamento_formam_o_par(banco):
+    """Uma linha só, de abertura, diria que alguém olhou **sem dizer por quanto
+    tempo**. O par é o que torna a auditoria útil."""
+    db.registrar_midia(
+        "s1", "CALL-1", "csi:0", "abertura", dispositivo="Câmera CSI", operador="op4"
+    )
+    db.registrar_midia("s1", "CALL-1", "csi:0", "fechamento", duracao_seg=42)
+
+    linhas = db.listar_auditoria_midia("CALL-1")
+
+    assert [x["acao"] for x in linhas] == ["abertura", "fechamento"]
+    assert linhas[0]["dispositivo"] == "Câmera CSI"
+    assert linhas[0]["operador"] == "op4"
+    assert linhas[1]["duracao_seg"] == 42
+
+
+def test_auditoria_de_outro_chamado_nao_aparece(banco):
+    db.registrar_midia("s1", "CALL-1", "csi:0", "abertura")
+    db.registrar_midia("s2", "CALL-2", "csi:0", "abertura")
+
+    assert len(db.listar_auditoria_midia("CALL-1")) == 1
+    assert len(db.listar_auditoria_midia()) == 2

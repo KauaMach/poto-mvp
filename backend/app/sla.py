@@ -15,6 +15,12 @@ delicada de escrever. Duas garantias moldam o arquivo:
   worker: ele é o que garante que uma emergência esquecida seja reencaminhada, e
   um worker morto falha em silêncio, que é a pior forma de falhar.
 
+Este laço também varre as **sessões de mídia expiradas** (MVP-077). Não é
+mistura de responsabilidades gratuita: a cadência é a mesma, e um segundo
+worker para fazer o mesmo trabalho seria mais um ponto de falha — mais uma
+tarefa para cancelar no encerramento, mais um lugar onde uma exceção derruba
+algo em silêncio.
+
 O que **não** escalona:
 
 - `orientacao`, porque não há urgência a proteger (`config.SLA_SEGUNDOS` traz
@@ -32,6 +38,7 @@ from datetime import UTC, datetime
 
 from . import canais, config, db
 from .hub import hub
+from .midia import sessao as sessoes_midia
 from .models import StatusChamado, para_painel
 
 logger = logging.getLogger(__name__)
@@ -128,8 +135,15 @@ async def loop() -> None:
     while True:
         try:
             await asyncio.sleep(config.SLA_CHECK_INTERVAL)
-            if (n := await varrer()) :
+            if n := await varrer():
                 logger.info("SLA: %d chamado(s) escalonado(s)", n)
+
+            # Aproveita o laço que já existe em vez de criar um segundo worker:
+            # a varredura de sessões de mídia expiradas (MVP-077) precisa de
+            # exatamente a mesma cadência, e um timer próprio seria mais um
+            # ponto de falha para fazer o mesmo trabalho.
+            if m := sessoes_midia.limpar_expiradas():
+                logger.info("mídia: %d sessão(ões) expirada(s) encerrada(s)", m)
         except asyncio.CancelledError:
             logger.info("worker de SLA encerrado")
             raise
