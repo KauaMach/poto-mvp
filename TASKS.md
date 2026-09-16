@@ -47,7 +47,7 @@
 | MVP-022 | Heurística de palavras-chave | F3 | P0 | 009 | ✅ Concluída |
 | MVP-023 | **Merge protetivo** ★ | F3 | P0 | 012, 020, 022 | ✅ Concluída |
 | MVP-024 | Fachada `triar()` | F3 | P0 | 023 | ✅ Concluída |
-| MVP-025 | Suíte de regressão de segurança | F3 | P0 | 024 | Pendente |
+| MVP-025 | Suíte de regressão de segurança | F3 | P0 | 024 | ✅ Concluída |
 | MVP-026 | App FastAPI + lifespan + estático | F4 | P0 | 004, 014 | Pendente |
 | MVP-027 | Hub de WebSocket | F4 | P0 | 026 | Pendente |
 | MVP-028 | Registry de canais + provider `log` | F4 | P0 | 011 | Pendente |
@@ -612,7 +612,7 @@
 
 ### MVP-025 — Suíte de regressão de segurança
 - **Descrição:** Provar com frases reais que o sistema nunca rebaixa a proteção. Cada caso aqui é um defeito reproduzido no projeto antigo.
-- **Prioridade:** P0 · **Depende de:** 024 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 024 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/tests/test_regressao_seguranca.py`
 - **Critérios de aceitação — cada linha é um teste:**
 
@@ -629,7 +629,29 @@
   | ouvidoria | "sugerir mais bancos no pátio" | `orientacao` · `ouvidoria` |
 
   - **Teste-invariante:** para toda trilha × texto do conjunto, a gravidade final é `>=` a gravidade que o roteador daria para a trilha sozinha
-- **Como validar:** `uv run pytest tests/test_regressao_seguranca.py -v` — nenhum `xfail`
+- **Como validar:** `uv run pytest tests/test_regressao_seguranca.py -v` — **340 casos**, nenhum `xfail`
+
+> **Roda com os dois motores.** Cada caso é executado com o classificador treinado *e*
+> com ele ausente. Uma Pi que subiu sem `make setup` precisa tratar emergência como
+> emergência — o motor pode mudar, o desfecho não. Verificado: as 8 linhas da tabela dão
+> resultado idêntico nos dois.
+>
+> **Verificação por mutação — e o que ela mudou.** Reintroduzi o defeito original no
+> `merge.py` para ver se a suíte pegaria:
+>
+> - Quebrar **uma** proteção não produz o defeito: a gravidade é guardada em três pontos
+>   independentes (o `max()` entre trilha e triagem, a promoção por sinal crítico, e o
+>   `max()` de novo após o re-roteamento). Defesa em profundidade real — e uma
+>   propriedade que alguém pode destruir sem perceber ao "simplificar".
+> - Quebrando **duas**, 36 testes falham — mas **29 deles são da varredura ampla**, não
+>   da tabela.
+> - **"socorro" continua passando** mesmo com duas proteções quebradas, porque o sinal
+>   crítico o resgata. Os únicos casos da tabela que pegam o defeito são *"preciso de
+>   ajuda"* e *"um homem está me seguindo"*, que não têm sinal crítico e dependem só do
+>   `max()`.
+>
+> Conclusão registrada no próprio arquivo: **não remover a varredura ampla achando que a
+> tabela cobre o mesmo.** Ela não cobre.
 
 ---
 
