@@ -44,7 +44,7 @@
 | MVP-019 | Portar datasets de triagem | F3 | P0 | 002 | ✅ Concluída |
 | MVP-020 | Classificador TF-IDF + LogReg | F3 | P0 | 019 | ✅ Concluída |
 | MVP-021 | Script de treino e avaliação | F3 | P0 | 020 | ✅ Concluída |
-| MVP-022 | Heurística de palavras-chave | F3 | P0 | 009 | Pendente |
+| MVP-022 | Heurística de palavras-chave | F3 | P0 | 009 | ✅ Concluída |
 | MVP-023 | **Merge protetivo** | F3 | P0 | 012, 020, 022 | Pendente |
 | MVP-024 | Fachada `triar()` | F3 | P0 | 023 | Pendente |
 | MVP-025 | Suíte de regressão de segurança | F3 | P0 | 024 | Pendente |
@@ -529,14 +529,27 @@
 
 ### MVP-022 — Heurística de palavras-chave
 - **Descrição:** Rede de segurança final, sem nenhuma dependência externa.
-- **Prioridade:** P0 · **Depende de:** 009 · **Status:** Pendente
-- **Arquivos:** `backend/app/triagem/heuristica.py`
+- **Prioridade:** P0 · **Depende de:** 009 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/triagem/heuristica.py`, `backend/tests/test_heuristica.py`
 - **Critérios de aceitação:**
   - Listas por tipo, mais `SINAIS_CRITICOS` e `SINAIS_AMEACA`
   - Texto sem categoria clara **mas** com sinal de ameaça → `seguranca` (protetivo), não `ouvidoria`
   - Normaliza acentos e caixa antes de casar
   - Devolve sempre um resultado válido, nunca `None`
-- **Como validar:** `uv run pytest tests/test_heuristica.py`
+- **Como validar:** `uv run pytest tests/test_heuristica.py` — 47 testes
+
+> **Dois defeitos da referência corrigidos na raiz.**
+>
+> 1. **Casamento por substring crua.** `"arma"` está nos sinais críticos, e
+>    `"arma" in texto` é verdadeiro para *"o armário do laboratório está quebrado"* —
+>    que abria uma emergência. Aqui o casamento usa fronteira de palavra.
+> 2. **Ausência de morfologia.** A lista tinha `desmaio` e `desmaiou`, não
+>    `desmaiando`. Aqui a notação `desmai*` cobre a família inteira, e a normalização de
+>    acento elimina a duplicação (`assédio` **e** `assedio`) que a referência carregava.
+>
+> Bug encontrado durante a task: `_compilar` só tratava `*` no fim do termo, então
+> `ameac* de morte` tinha o asterisco escapado literalmente e nunca casava. Corrigido
+> para valer em qualquer posição.
 
 ### MVP-023 — Merge protetivo ★
 - **Descrição:** A função que combina a trilha escolhida pela pessoa com a triagem do texto. **É a task mais importante do MVP.**
