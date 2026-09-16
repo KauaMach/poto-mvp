@@ -56,9 +56,9 @@
 | MVP-031 | `POST /panico` | F4 | P0 | 030 | ✅ Concluída |
 | MVP-032 | `GET /chamados` e `GET /chamados/{id}` | F4 | P0 | 016 | ✅ Concluída |
 | MVP-033 | `POST /chamados/{id}/ack` e `PATCH` | F4 | P0 | 016, 027 | ✅ Concluída |
-| MVP-034 | `POST /chamados/{id}/escalonar` | F4 | P0 | 028, 032 | Pendente |
-| MVP-035 | `WS /ws` | F4 | P0 | 027 | Pendente |
-| MVP-036 | `GET /health` honesto | F4 | P0 | 024, 028 | Pendente |
+| MVP-034 | `POST /chamados/{id}/escalonar` | F4 | P0 | 028, 032 | ✅ Concluída |
+| MVP-035 | `WS /ws` | F4 | P0 | 027 | ✅ Concluída |
+| MVP-036 | `GET /health` honesto | F4 | P0 | 024, 028 | ✅ Concluída |
 | MVP-037 | `GET /config` e `GET /canais` | F4 | P0 | 011 | Pendente |
 | MVP-038 | Worker de SLA e escalonamento | F4 | P0 | 030, 033 | Pendente |
 | MVP-039 | Testes de contrato da API | F4 | P0 | 030–038 | Pendente |
@@ -977,29 +977,87 @@
 
 ### MVP-034 — `POST /chamados/{id}/escalonar`
 - **Descrição:** Acionamento manual de autoridade do estado, sem encerrar o alerta.
-- **Prioridade:** P0 · **Depende de:** 028, 032 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 028, 032 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/app/api/chamados.py`
 - **Critérios de aceitação:**
   - Aceita só canais de `CANAIS_ESTADO`; outro valor → `422`
   - **Registra o acionamento humano; não robo-disca**
   - Grava em `notificacoes` com `escalonamento=1`
   - Não rebaixa `alerta_ativo`
-- **Como validar:** `uv run pytest tests/test_api_chamados.py::test_escalonar`
+- **Como validar:** `uv run pytest tests/test_api_chamados.py::test_escalonar` — 16 testes
+
+> **"Não robo-disca" é sobre quem inicia, não sobre o que sai.** O endpoint *notifica* o
+> canal — é por isso que `CANAIS_ESTADO` tem contato configurável e que
+> `POTO_CONTACT_OVERRIDE` existe para "impedir acionar 190/192/193/180 de verdade durante
+> os ensaios": se nada fosse enviado, não haveria o que impedir. O que a regra garante é
+> que **nenhum caminho automático** chega aqui: nem a triagem, nem o roteador, nem
+> `/eventos`, nem `/panico`. As autoridades são *oferecidas* na tela e só saem daqui por
+> um POST explícito. Há teste cobrindo isso de fora, com os contatos do estado
+> configurados e prontos para receber.
+>
+> Com contato ausente — que é o default, porque nenhum contato tem valor padrão — nada
+> sai do prédio, mas o registro da decisão humana acontece de todo modo: é o registro de
+> que alguém acionou a PM às 3h12, ainda que pelo próprio telefone.
+>
+> Canal interno rejeitado com 422 não é burocracia: um `csv` acionado por aqui entraria no
+> histórico marcado como decisão humana de escalonamento, contaminando a única distinção
+> que o registro faz entre o que o sistema decidiu e o que uma pessoa decidiu.
+>
+> Escalonar **não** é idempotente, ao contrário do acionamento: duas tentativas de chamar
+> o SAMU são dois fatos distintos no histórico.
 
 ### MVP-035 — `WS /ws`
 - **Descrição:** Canal de tempo real do painel.
-- **Prioridade:** P0 · **Depende de:** 027 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 027 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/app/api/chamados.py`
 - **Critérios de aceitação:**
   - Envia `conectado` ao abrir
   - Transmite `novo_chamado` e `atualizado`
   - `ping` a cada 30 s para manter viva
   - Desconexão não derruba o servidor nem vaza memória
-- **Como validar:** `websocat ws://localhost:8000/api/v1/ws` e disparar um evento
+- **Como validar:** `websocat ws://localhost:8000/api/v1/ws` e disparar um evento —
+  14 testes
+- **Arquivos (além do previsto):** `backend/app/hub.py`
+
+> **O `ping` obrigou uma mudança no hub.** O uvicorn já manda ping de *protocolo*, mas o
+> navegador não expõe isso ao JavaScript: a API WebSocket não avisa sobre pong. Sem ping
+> de aplicação, o painel não distingue "nada aconteceu nos últimos dez minutos" de "a
+> conexão morreu e eu não sei" — na tela os dois estados são idênticos e significam o
+> oposto.
+>
+> Só que o pingador é um **segundo remetente** no mesmo socket, ao lado do `broadcast`.
+> Envios simultâneos num WebSocket intercalam frames e o que chega ao navegador é lixo: a
+> conexão morre e o operador para de receber alertas. O hub passou a ter um **cadeado de
+> escrita por cliente** — que fecha também a lacuna de dois acionamentos simultâneos, e
+> serializa só as escritas de um socket, não clientes diferentes (um painel lento não pode
+> atrasar os outros, que é a garantia da MVP-027).
+>
+> O ping roda em tarefa própria e **não** dentro do laço com `wait_for`: cancelar o
+> `receive` a cada 30 s para dar a vez ao ping é o que faz uma implementação perder a
+> mensagem de desconexão e deixar conexão morta no hub.
+>
+> O canal é de leitura. Mensagem do cliente é ignorada de propósito — aceitar comandos
+> por aqui criaria uma via de escrita sem contrato, sem 422 e sem o 404 dos endpoints
+> REST.
+>
+> **Duas lições da verificação por mutação:**
+>
+> 1. Ao remover o `conectado`, a rodada **pendurou** em vez de acusar: o `receive_json` do
+>    `TestClient` bloqueia para sempre. Os testes de WS passaram a usar um recebedor com
+>    prazo, construído sobre o mesmo portal do anyio que o `TestClient` usa por dentro.
+>    Mesma lição do teto de envio na MVP-027: o teste tem que reprovar, não travar.
+> 2. `test_mensagem_do_cliente_e_ignorada` passava pela **ordem errada** — mandava o
+>    comando antes de o chamado existir, então um endpoint que obedecesse não teria o que
+>    reconhecer. Corrigido para citar o id real de um chamado já criado.
+>
+> `pingador.cancel()` é redundante para a correção e mantido de propósito: `_pingar` já
+> para sozinho quando `hub.enviar` devolve `False`. A diferença é de tempo — sem o cancel,
+> cada painel desconectado deixa uma tarefa dormindo até 30 s. Removê-lo não falha teste
+> nenhum; está documentado no código.
 
 ### MVP-036 — `GET /health` honesto
 - **Descrição:** Diagnóstico que reflete a realidade — corrige o defeito em que o antigo afirmava usar IA sem usar.
-- **Prioridade:** P0 · **Depende de:** 024, 028 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 024, 028 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/app/api/sistema.py`
 - **Critérios de aceitação:**
   - `triagem.modo` é `classificador` **somente** se o artefato está carregado; senão `heuristica`
@@ -1007,7 +1065,37 @@
   - Campo `avisos[]` alerta quando a triagem está degradada
   - Expõe o **build-id do frontend**, para conferir se o artefato servido é o esperado
     (mitiga o risco de artefato velho — ver MVP-066b)
-- **Como validar:** renomear o `.joblib`, reiniciar, e conferir que `/health` diz `heuristica`
+- **Como validar:** renomear o `.joblib`, reiniciar, e conferir que `/health` diz
+  `heuristica` — 28 testes
+- **Arquivos:** `backend/app/api/sistema.py`, `backend/tests/test_api_sistema.py`
+
+> Cada campo é **lido da realidade** no momento da pergunta: o artefato é carregado, o
+> banco é consultado, o arquivo do build é aberto. Nenhum deles repete uma configuração de
+> volta — que era o defeito do projeto de referência, onde a triagem carimbava
+> `fonte: "agentes"` sem nenhum LLM ter respondido.
+>
+> `status` fica `"ok"` enquanto o serviço responde: é sinal de vida, e uma sonda de
+> monitoramento precisa dele estável. A degradação vive em `avisos`, e cada aviso nomeia a
+> causa **e** a saída (`rode make setup`, `POTO_NOTIF_WEBHOOK_URL`) — um diagnóstico que só
+> diz "degradado" obriga a ir ler o código.
+>
+> Coberto o caso que a formulação do critério deixa passar: `CLF_PATH` apontando para um
+> arquivo que **existe mas não é um modelo**. O artefato existe e o modo ainda assim cai
+> para `heuristica`, porque o campo pergunta ao classificador se ele carregou.
+>
+> `POTO_CONTACT_OVERRIDE` ativo virou aviso, não erro: em bancada é o comportamento
+> desejado. O que não pode é chegar à operação real sem ninguém notar que todo acionamento
+> está sendo desviado para um número de teste.
+>
+> **Correção ao plano da MVP-066b:** o arquivo de build-id era listado como
+> `frontend/build-id`, fora do `dist/`. O deploy envia `dist/` por rsync, então um
+> build-id fora dessa pasta **não viajaria com o artefato** — daria para ter um `dist/`
+> velho servindo com um build-id novo, que é precisamente o bug silencioso que o build-id
+> existe para detectar. Ele passou a ser lido de `dist/build-id`, e a MVP-066b deve
+> gravá-lo ali.
+>
+> Build-id vazio conta como ausente: um arquivo criado por build que falhou no meio faria
+> a comparação com o build-id local passar por engano.
 
 ### MVP-037 — `GET /config` e `GET /canais`
 - **Descrição:** Expor ao frontend as constantes que ele não deve duplicar.
@@ -1506,11 +1594,15 @@
 ### MVP-066b — `make deploy` e build-id verificável
 - **Descrição:** Um comando só que constrói e envia, mais um jeito de confirmar qual build está no ar.
 - **Prioridade:** P0 · **Depende de:** 066 · **Status:** Pendente
-- **Arquivos:** `Makefile`, `frontend/build-id`, `backend/app/api/sistema.py`
+- **Arquivos:** `Makefile`, `frontend/dist/build-id`, `backend/app/api/sistema.py`
 - **Critérios de aceitação:**
   - `make deploy` executa **build e rsync na mesma ação** — não existe enviar sem reconstruir
   - Exclui `.venv/`, `node_modules/`, `__pycache__/`, `*.db` do envio
-  - O build grava um identificador (hash do bundle) que o `/health` expõe
+  - O build grava um identificador (hash do bundle) que o `/health` expõe, **dentro de
+    `frontend/dist/`** — corrigido na MVP-036: o deploy envia `dist/` por rsync, e um
+    build-id fora dessa pasta não viajaria com o artefato, permitindo um `dist/` velho
+    servindo com build-id novo. O lado da leitura já está pronto
+    (`sistema.ARQUIVO_BUILD_ID`)
   - Comparar o build-id local com o do `/health` da Pi diz se o artefato está atualizado
 - **Como validar:** alterar uma string na tela, `make deploy`, e conferir que o build-id do `/health` da Pi mudou
 - **Por que existe:** é a mitigação do único risco real de separar build e execução — **artefato velho**.

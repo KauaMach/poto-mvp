@@ -369,3 +369,146 @@ def test_broadcast_depois_da_desconexao_real_nao_derruba(app_com_ws, hub):
 
     assert cliente.post("/disparar").status_code == 200
     assert cliente.post("/disparar").json()["conectados"] == 0
+
+
+# --- Envio a um cliente só e serialização -----------------------------------
+#
+# `enviar` existe para o `conectado` e o `ping` da MVP-035, que são dirigidos a
+# uma conexão. E o cadeado existe porque esses dois, somados ao `broadcast`,
+# fazem do mesmo socket destino de **dois remetentes concorrentes**.
+
+
+async def test_enviar_alcanca_so_o_destinatario(hub):
+    a, b = PainelFalso(), PainelFalso()
+    await conectar(hub, a, b)
+
+    assert await hub.enviar(a, "ping", {}) is True
+
+    assert [m["evento"] for m in a.recebidas] == ["ping"]
+    assert b.recebidas == []
+
+
+async def test_enviar_usa_o_mesmo_formato(hub):
+    painel = PainelFalso()
+    await hub.connect(painel)
+
+    await hub.enviar(painel, "conectado", {"paineis": 1})
+
+    assert painel.recebidas == [{"evento": "conectado", "dados": {"paineis": 1}}]
+
+
+async def test_enviar_para_desconhecido_devolve_falso(hub):
+    """O pingador da MVP-035 usa isto para parar sozinho quando o cliente já
+    saiu, em vez de girar contra um socket morto."""
+    assert await hub.enviar(PainelFalso(), "ping", {}) is False
+
+
+async def test_enviar_que_falha_remove_o_cliente(hub):
+    ruim = PainelQueFalha()
+    await hub.connect(ruim)
+
+    assert await hub.enviar(ruim, "ping", {}) is False
+    assert len(hub) == 0
+
+
+async def test_enviar_travado_e_removido(prazo_curto, hub):
+    travado = PainelTravado()
+    await hub.connect(travado)
+
+    resultado = await asyncio.wait_for(hub.enviar(travado, "ping", {}), timeout=2.0)
+
+    assert resultado is False
+    assert len(hub) == 0
+
+
+async def test_dois_remetentes_nao_se_intercalam(hub):
+    """A propriedade que o cadeado garante.
+
+    Um WebSocket não tolera dois envios simultâneos: as corrotinas escrevem
+    frames intercalados no mesmo socket e o que chega ao navegador é lixo — a
+    conexão morre e o operador para de receber alertas.
+
+    O dublê aqui registra *entrada* e *saída* de cada escrita. Serializado, a
+    sequência é `abre/fecha` aos pares; sem cadeado, dois `abre` seguidos
+    aparecem.
+    """
+
+    class PainelQueMarca(PainelFalso):
+        def __init__(self):
+            super().__init__()
+            self.marcas: list[str] = []
+
+        async def send_json(self, mensagem: dict) -> None:
+            self.marcas.append(f"abre:{mensagem['evento']}")
+            await asyncio.sleep(0)  # dá chance de o outro remetente entrar
+            self.marcas.append(f"fecha:{mensagem['evento']}")
+
+    painel = PainelQueMarca()
+    await hub.connect(painel)
+
+    await asyncio.gather(
+        hub.broadcast("novo_chamado", {}),
+        hub.enviar(painel, "ping", {}),
+    )
+
+    pares = [
+        (painel.marcas[i], painel.marcas[i + 1])
+        for i in range(0, len(painel.marcas), 2)
+    ]
+    assert all(
+        a.split(":")[1] == f.split(":")[1] and a.startswith("abre")
+        for a, f in pares
+    ), f"escritas intercaladas: {painel.marcas}"
+
+
+async def test_broadcasts_concorrentes_nao_se_intercalam(hub):
+    """Dois acionamentos simultâneos, de dois totens, cruzam no mesmo socket."""
+
+    class PainelQueMarca(PainelFalso):
+        def __init__(self):
+            super().__init__()
+            self.marcas: list[str] = []
+
+        async def send_json(self, mensagem: dict) -> None:
+            self.marcas.append("abre")
+            await asyncio.sleep(0)
+            self.marcas.append("fecha")
+
+    painel = PainelQueMarca()
+    await hub.connect(painel)
+
+    await asyncio.gather(
+        hub.broadcast("novo_chamado", {"n": 1}),
+        hub.broadcast("novo_chamado", {"n": 2}),
+    )
+
+    assert painel.marcas == ["abre", "fecha", "abre", "fecha"]
+
+
+async def test_cadeado_nao_serializa_clientes_diferentes(hub):
+    """O cadeado é por cliente. Serializar clientes distintos faria um painel
+    lento atrasar todos os outros — o oposto do que a MVP-027 garantiu."""
+    barreira = asyncio.Barrier(2)
+
+    class PainelSincronizado(PainelFalso):
+        async def send_json(self, mensagem: dict) -> None:
+            await asyncio.wait_for(barreira.wait(), timeout=2.0)
+            await super().send_json(mensagem)
+
+    a, b = PainelSincronizado(), PainelSincronizado()
+    await conectar(hub, a, b)
+
+    await hub.broadcast("novo_chamado", {})
+
+    assert len(a.recebidas) == 1 and len(b.recebidas) == 1
+    assert len(hub) == 2
+
+
+async def test_cadeado_sai_junto_com_o_cliente(hub):
+    """Sem isto, cada painel que se desconecta deixa um cadeado no dicionário —
+    um vazamento lento num serviço que roda por semanas."""
+    painel = PainelFalso()
+    await hub.connect(painel)
+    hub.disconnect(painel)
+
+    assert painel not in hub._clientes

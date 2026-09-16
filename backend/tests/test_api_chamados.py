@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import config, db
+from app.api import chamados as chamados_api
 from app.hub import hub as hub_global
 from app.main import criar_app
 from app.models import Gravidade, StatusChamado, TipoOcorrencia
@@ -794,3 +795,368 @@ async def test_broadcast_de_novo_chamado_e_de_atualizado_tem_o_mesmo_formato(
 async def test_broadcast_do_panico_tambem(cliente, painel):
     entrar_em_panico(cliente)
     assert set(painel.ultimo("novo_chamado")) == CAMPOS_DA_LISTA
+
+
+# ===========================================================================
+# MVP-034 — Escalonamento manual
+# ===========================================================================
+
+
+def escalonar(cliente, chamado_id, canal):
+    return cliente.post(f"{LISTA}/{chamado_id}/escalonar", json={"canal": canal})
+
+
+@pytest.fixture
+def contatos_do_estado(monkeypatch):
+    monkeypatch.setattr(
+        config,
+        "_CONTATOS",
+        {
+            "csv": CONTATO_CSV,
+            "sala_lilas": CONTATO_LILAS,
+            "samu_192": "192",
+            "pm_190": "190",
+        },
+    )
+
+
+def test_escalonar(cliente, contatos_do_estado):
+    """O teste que a MVP-034 nomeia."""
+    criado = entrar_em_panico(cliente)
+
+    r = escalonar(cliente, criado["chamado_id"], "samu_192")
+
+    assert r.status_code == 200
+    assert r.json() == {
+        "canal": "samu_192",
+        "nome": "SAMU",
+        "sucesso": True,
+        "detalhe": r.json()["detalhe"],
+    }
+
+
+def test_escalonamento_e_gravado_como_humano(cliente, contatos_do_estado):
+    """`escalonamento=1` separa para sempre, no histórico do chamado, o que o
+    sistema decidiu do que uma pessoa decidiu."""
+    criado = entrar_em_panico(cliente)
+
+    escalonar(cliente, criado["chamado_id"], "samu_192")
+
+    registros = db.listar_notificacoes(criado["chamado_id"])
+    humanos = [n for n in registros if n["escalonamento"]]
+    assert [n["canal"] for n in humanos] == ["samu_192"]
+
+
+def test_acionamento_automatico_continua_marcado_como_automatico(
+    cliente, contatos_do_estado
+):
+    """A contrapartida: os canais internos do pânico não viram escalonamento."""
+    criado = entrar_em_panico(cliente)
+
+    escalonar(cliente, criado["chamado_id"], "pm_190")
+
+    registros = db.listar_notificacoes(criado["chamado_id"])
+    automaticos = {n["canal"] for n in registros if not n["escalonamento"]}
+    assert automaticos == set(config.CANAIS_INTERNOS)
+
+
+@pytest.mark.parametrize("canal", ["pm_190", "samu_192", "bombeiros_193", "central_180"])
+def test_as_quatro_autoridades_sao_aceitas(cliente, canal):
+    criado = entrar_em_panico(cliente)
+    assert escalonar(cliente, criado["chamado_id"], canal).status_code == 200
+
+
+@pytest.mark.parametrize("canal", ["csv", "sala_lilas", "sapsi", "ouvidoria"])
+def test_canal_interno_e_rejeitado(cliente, canal):
+    """Um canal interno acionado por aqui entraria no histórico marcado como
+    decisão humana de escalonamento, contaminando a única distinção que o
+    registro faz entre o que o sistema decidiu e o que uma pessoa decidiu."""
+    criado = entrar_em_panico(cliente)
+    assert escalonar(cliente, criado["chamado_id"], canal).status_code == 422
+
+
+@pytest.mark.parametrize("canal", ["batman", "", "PM_190", "190"])
+def test_canal_desconhecido_e_rejeitado(cliente, canal):
+    criado = entrar_em_panico(cliente)
+    assert escalonar(cliente, criado["chamado_id"], canal).status_code == 422
+
+
+def test_canal_rejeitado_nao_grava_nada(cliente, contatos_do_estado):
+    criado = entrar_em_panico(cliente)
+    antes = len(db.listar_notificacoes(criado["chamado_id"]))
+
+    escalonar(cliente, criado["chamado_id"], "csv")
+
+    assert len(db.listar_notificacoes(criado["chamado_id"])) == antes
+
+
+def test_escalonar_chamado_inexistente_e_404(cliente):
+    assert escalonar(cliente, "CALL-2026-999999", "samu_192").status_code == 404
+
+
+def test_escalonar_nao_rebaixa_alerta_ativo(cliente, contatos_do_estado):
+    """Chamar a PM não resolve a emergência. Rebaixar o alerta aqui apagaria da
+    tela do totem justamente o estado que mantém o cronômetro correndo."""
+    criado = entrar_em_panico(cliente)
+
+    escalonar(cliente, criado["chamado_id"], "pm_190")
+
+    assert db.obter_chamado(criado["chamado_id"])["status"] == (
+        StatusChamado.alerta_ativo
+    )
+
+
+def test_escalonar_nao_muda_status_nenhum(cliente, contatos_do_estado):
+    criado = acionar(cliente)
+    antes = db.obter_chamado(criado["chamado_id"])["status"]
+
+    escalonar(cliente, criado["chamado_id"], "samu_192")
+
+    assert db.obter_chamado(criado["chamado_id"])["status"] == antes
+
+
+def test_escalonar_sem_contato_configurado_ainda_registra(cliente, monkeypatch):
+    """Sem contato o sistema não tem para onde mandar — mas a decisão humana
+    aconteceu e precisa constar. É o registro de que alguém acionou a PM às
+    3h12, ainda que por telefone próprio."""
+    monkeypatch.setattr(config, "_CONTATOS", {"csv": CONTATO_CSV})
+    criado = acionar(cliente)
+
+    r = escalonar(cliente, criado["chamado_id"], "pm_190")
+
+    assert r.status_code == 200
+    assert r.json()["sucesso"] is False
+    humanos = [n for n in db.listar_notificacoes(criado["chamado_id"]) if n["escalonamento"]]
+    assert [n["canal"] for n in humanos] == ["pm_190"]
+
+
+def test_escalonar_duas_vezes_registra_duas(cliente, contatos_do_estado):
+    """Ao contrário do acionamento, escalonar **não** é idempotente: duas
+    tentativas de chamar o SAMU são dois fatos distintos no histórico."""
+    criado = entrar_em_panico(cliente)
+
+    escalonar(cliente, criado["chamado_id"], "samu_192")
+    escalonar(cliente, criado["chamado_id"], "samu_192")
+
+    humanos = [n for n in db.listar_notificacoes(criado["chamado_id"]) if n["escalonamento"]]
+    assert len(humanos) == 2
+
+
+def test_nenhum_caminho_automatico_aciona_o_estado(cliente, contatos_do_estado):
+    """A garantia de "não robo-disca", verificada de fora: um acionamento e um
+    pânico, com contatos do estado configurados e prontos para receber, e
+    nenhum dos dois toca em `CANAIS_ESTADO`."""
+    a = acionar(cliente, texto_livre="socorro, estou sangrando")
+    b = entrar_em_panico(cliente)
+
+    acionados = {
+        n["canal"]
+        for cid in (a["chamado_id"], b["chamado_id"])
+        for n in db.listar_notificacoes(cid)
+    }
+    assert acionados.isdisjoint(config.CANAIS_ESTADO)
+
+
+def test_escalonamento_aparece_no_detalhe(cliente, contatos_do_estado):
+    criado = entrar_em_panico(cliente)
+
+    escalonar(cliente, criado["chamado_id"], "central_180")
+
+    detalhe = cliente.get(f"{LISTA}/{criado['chamado_id']}").json()
+    humano = [n for n in detalhe["notificacoes"] if n["escalonamento"]][0]
+    assert humano["canal"] == "central_180"
+    assert humano["nome"] == "Central de Atendimento à Mulher"
+
+
+# ===========================================================================
+# MVP-035 — WS /ws
+# ===========================================================================
+
+WS = "/api/v1/ws"
+
+PRAZO_WS = 2.0
+
+
+def receber(ws, prazo: float = PRAZO_WS) -> dict:
+    """Recebe uma mensagem do WebSocket **com prazo**.
+
+    O `receive_json` do `TestClient` bloqueia indefinidamente quando nada
+    chega. Com ele, um endpoint que deixa de enviar uma mensagem **pendura a
+    suíte** em vez de reprovar — e foi exatamente o que aconteceu na verificação
+    por mutação: ao remover o `conectado` do `/ws`, a rodada travou em vez de
+    acusar o defeito.
+
+    O prazo usa o mesmo portal do anyio que o `TestClient` usa por dentro, o
+    que evita deixar thread pendurada quando o teste falha.
+    """
+    import json
+
+    import anyio
+
+    async def ler(rx):
+        with anyio.fail_after(prazo):
+            return await rx.receive()
+
+    try:
+        mensagem = ws.portal.call(ler, ws._send_rx)
+    except TimeoutError:
+        raise AssertionError(
+            f"nenhuma mensagem no WebSocket em {prazo}s — o endpoint não enviou"
+        ) from None
+
+    if mensagem["type"] == "websocket.close":
+        raise AssertionError(f"WebSocket fechado pelo servidor: {mensagem}")
+    return json.loads(mensagem["text"])
+
+
+def test_ws_envia_conectado_ao_abrir(cliente):
+    """Primeira mensagem, antes de qualquer evento. É o que diz ao painel que o
+    canal está vivo — sem ela, uma tela em branco pode ser "nada aconteceu" ou
+    "não conectei", e as duas coisas parecem idênticas."""
+    with cliente.websocket_connect(WS) as ws:
+        assert receber(ws)["evento"] == "conectado"
+
+
+def test_conectado_informa_quantos_paineis(cliente):
+    """Permite a tela mostrar "2 operadores conectados" — e perceber que
+    ninguém mais está olhando."""
+    with cliente.websocket_connect(WS) as ws:
+        dados = receber(ws)["dados"]
+    assert dados["paineis"] == 1
+    assert "servidor" in dados
+
+
+def test_ws_recebe_novo_chamado(cliente):
+    with cliente.websocket_connect(WS) as ws:
+        receber(ws)  # conectado
+        criado = acionar(cliente)
+        mensagem = receber(ws)
+
+    assert mensagem["evento"] == "novo_chamado"
+    assert mensagem["dados"]["chamado_id"] == criado["chamado_id"]
+
+
+def test_ws_recebe_atualizado(cliente):
+    criado = acionar(cliente)
+
+    with cliente.websocket_connect(WS) as ws:
+        receber(ws)  # conectado
+        cliente.post(f"{LISTA}/{criado['chamado_id']}/ack")
+        mensagem = receber(ws)
+
+    assert mensagem["evento"] == "atualizado"
+    assert mensagem["dados"]["status"] == StatusChamado.reconhecido
+
+
+def test_ws_recebe_o_relato(cliente):
+    """O painel está dentro da fronteira de confiança e precisa do relato para
+    decidir como responder. É o que torna a autenticação desta rota
+    obrigatória, não opcional (MVP-040)."""
+    with cliente.websocket_connect(WS) as ws:
+        receber(ws)
+        acionar(cliente, texto_livre=RELATO)
+        assert receber(ws)["dados"]["texto_livre"] == RELATO
+
+
+def test_dois_paineis_recebem_o_mesmo_evento(cliente):
+    with cliente.websocket_connect(WS) as a, cliente.websocket_connect(WS) as b:
+        receber(a)
+        receber(b)
+        acionar(cliente)
+        assert receber(a)["evento"] == "novo_chamado"
+        assert receber(b)["evento"] == "novo_chamado"
+
+
+def test_ws_registra_e_remove_do_hub(cliente):
+    """Desconexão não vaza memória: o critério da MVP-035."""
+    assert len(hub_global) == 0
+    with cliente.websocket_connect(WS):
+        assert len(hub_global) == 1
+    assert len(hub_global) == 0
+
+
+def test_desconexao_nao_derruba_o_servidor(cliente):
+    for _ in range(3):
+        with cliente.websocket_connect(WS) as ws:
+            receber(ws)
+
+    assert cliente.get("/api/v1/health").status_code == 200
+    assert len(hub_global) == 0
+
+
+def test_acionamento_funciona_depois_de_painel_sair(cliente):
+    with cliente.websocket_connect(WS) as ws:
+        receber(ws)
+
+    assert acionar(cliente)["chamado_id"].startswith("CALL-")
+
+
+def test_mensagem_do_cliente_e_ignorada(cliente):
+    """Este canal é de leitura. Aceitar comandos por aqui criaria uma via de
+    escrita sem as validações dos endpoints REST — nem contrato, nem 422, nem
+    o 404 que distingue um chamado inexistente.
+
+    A **ordem** aqui é o que dá valor ao teste, e a primeira versão errou nela:
+    o comando era enviado antes de o chamado existir, então um endpoint que
+    obedecesse não teria o que reconhecer e o teste passaria de graça.
+    Verificado por mutação. Agora o chamado existe e o comando cita o id real.
+    """
+    criado = acionar(cliente)
+    assert db.obter_chamado(criado["chamado_id"])["acked_at"] is None
+
+    with cliente.websocket_connect(WS) as ws:
+        receber(ws)  # conectado
+        ws.send_text(f'{{"evento": "ack", "chamado_id": "{criado["chamado_id"]}"}}')
+        ws.send_text('{"evento": "patch", "status": "encerrado"}')
+
+        # Ida e volta pelo mesmo canal: quando este evento chega, o laço do
+        # endpoint já consumiu os dois textos acima.
+        outro = acionar(cliente)
+        assert receber(ws)["dados"]["chamado_id"] == outro["chamado_id"]
+
+    persistido = db.obter_chamado(criado["chamado_id"])
+    assert persistido["acked_at"] is None
+    assert persistido["status"] != StatusChamado.encerrado
+
+
+def test_ping_mantem_a_conexao_viva(cliente, monkeypatch):
+    """O uvicorn já manda ping de **protocolo**, mas o navegador não expõe isso
+    ao JavaScript: a API WebSocket não avisa sobre pong. Sem um ping de
+    aplicação, o painel não distingue "nada aconteceu nos últimos dez minutos"
+    de "a conexão morreu e eu não sei"."""
+    monkeypatch.setattr(chamados_api, "INTERVALO_PING", 0.05)
+
+    with cliente.websocket_connect(WS) as ws:
+        assert receber(ws)["evento"] == "conectado"
+        assert receber(ws)["evento"] == "ping"
+        assert receber(ws)["evento"] == "ping"
+
+
+def test_pingador_para_quando_o_painel_sai(cliente, monkeypatch):
+    """Sem cancelar o pingador, cada painel que se desconecta deixa uma tarefa
+    eterna tentando escrever num socket fechado."""
+    monkeypatch.setattr(chamados_api, "INTERVALO_PING", 0.05)
+
+    with cliente.websocket_connect(WS) as ws:
+        receber(ws)
+        receber(ws)  # ping
+
+    assert len(hub_global) == 0
+    assert cliente.get("/api/v1/health").status_code == 200
+
+
+def test_ping_nao_atropela_um_evento(cliente, monkeypatch):
+    """Os dois remetentes concorrentes do mesmo socket. O cadeado do hub
+    serializa as escritas; sem ele os frames se intercalariam e o JSON chegaria
+    corrompido — e é este teste que perceberia, porque `receive_json` falharia
+    ao decodificar."""
+    monkeypatch.setattr(chamados_api, "INTERVALO_PING", 0.01)
+
+    with cliente.websocket_connect(WS) as ws:
+        receber(ws)
+        for _ in range(5):
+            acionar(cliente)
+        eventos = [receber(ws)["evento"] for _ in range(10)]
+
+    assert set(eventos) <= {"ping", "novo_chamado", "atualizado"}
+    assert "novo_chamado" in eventos

@@ -13,18 +13,21 @@ das notificações sai mascarado.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
-from .. import config, db
+from .. import canais, config, db
 from ..canais.log import mascarar
 from ..hub import hub
 from ..models import (
+    CanalResultado,
     ChamadoDetalhe,
     ChamadoOut,
     ChamadoUpdate,
+    EscalonamentoIn,
     EstadoOut,
     Gravidade,
     NotificacaoOut,
@@ -174,3 +177,130 @@ async def _avisar(chamado: dict) -> None:
     de reconectar e perdeu o anterior.
     """
     await hub.broadcast("atualizado", para_painel(chamado))
+
+
+# ===========================================================================
+# Escalonamento manual
+# ===========================================================================
+
+
+@router.post("/chamados/{chamado_id}/escalonar", response_model=CanalResultado)
+async def escalonar(chamado_id: str, pedido: EscalonamentoIn) -> CanalResultado:
+    """Aciona uma autoridade do estado por decisão de um humano na central.
+
+    **O sistema nunca chega aqui sozinho.** Não há caminho automático para
+    `CANAIS_ESTADO`: nem a triagem, nem o roteador, nem `/eventos`, nem
+    `/panico` acionam PM, SAMU, Bombeiros ou o 180 — eles são *oferecidos* na
+    tela (`escalonamento_disponivel`) e só saem daqui por um POST explícito.
+    Acionar o 190 por classificação automática seria irresponsável, e é o tipo
+    de decisão que a máquina não toma.
+
+    O registro fica com `escalonamento=1`, separando para sempre a decisão
+    humana do encaminhamento automático no histórico do chamado.
+
+    **Não mexe no status.** Um pânico escalonado continua em `alerta_ativo`:
+    chamar a PM não resolve a emergência, e rebaixar o alerta aqui apagaria da
+    tela do totem justamente o estado que mantém o cronômetro correndo.
+    """
+    if pedido.canal not in config.CANAIS_ESTADO:
+        # Só as quatro autoridades do estado. Um canal interno acionado por aqui
+        # entraria no histórico marcado como decisão humana de escalonamento,
+        # contaminando a única distinção que o registro faz entre o que o
+        # sistema decidiu e o que uma pessoa decidiu.
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"canal {pedido.canal!r} não é de escalonamento; "
+                f"permitidos: {config.CANAIS_ESTADO}"
+            ),
+        )
+
+    chamado = db.obter_chamado(chamado_id)
+    if chamado is None:
+        raise HTTPException(status_code=404, detail="chamado não encontrado")
+
+    sucesso, detalhe = await canais.notificar(
+        chamado, pedido.canal, escalonamento=True
+    )
+    return CanalResultado(
+        canal=pedido.canal,
+        nome=config.nome_canal(pedido.canal),
+        sucesso=sucesso,
+        detalhe=detalhe,
+    )
+
+
+# ===========================================================================
+# WS /ws — o canal de tempo real do painel
+# ===========================================================================
+
+# Intervalo do ping de aplicação.
+#
+# O uvicorn já manda ping de **protocolo**, mas o navegador não expõe isso ao
+# JavaScript: a API WebSocket não avisa sobre pong. Sem um ping no nível da
+# aplicação, o painel não tem como distinguir "nada aconteceu nos últimos dez
+# minutos" de "a conexão morreu e eu não sei". Num painel de emergência, os
+# dois estados parecem idênticos na tela e significam o oposto.
+INTERVALO_PING = 30.0
+
+
+@router.websocket("/ws")
+async def painel_ao_vivo(websocket: WebSocket) -> None:
+    """Mantém o painel em tempo real.
+
+    O `hub` faz a transmissão; esta função só cuida do ciclo de vida de uma
+    conexão. Ela não lê nada de útil do cliente — o painel é um consumidor — mas
+    **precisa** ficar bloqueada num `receive`: é assim que a desconexão chega.
+    """
+    await hub.connect(websocket)
+
+    # O ping em tarefa própria, e não dentro do laço com `wait_for`: cancelar um
+    # `receive` a cada 30 s para dar a vez ao ping é o que faz uma implementação
+    # perder a mensagem de desconexão e deixar a conexão morta no hub.
+    pingador = asyncio.create_task(_pingar(websocket))
+    try:
+        await hub.enviar(websocket, "conectado", _dados_da_conexao())
+        while True:
+            # Bloqueia até o cliente desconectar. Qualquer coisa que o painel
+            # mande é ignorada de propósito: este canal é de leitura, e aceitar
+            # comandos por aqui criaria uma via de escrita sem as validações
+            # dos endpoints REST.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.warning("conexão de painel encerrada com erro", exc_info=True)
+    finally:
+        # O `disconnect` é o que importa: sem ele o hub guarda uma conexão morta
+        # e todo broadcast seguinte tenta escrever nela.
+        #
+        # O `cancel` é redundante **para a correção** e mantido de propósito —
+        # verificado por mutação: removê-lo não falha teste nenhum, porque
+        # `_pingar` também para sozinho quando `hub.enviar` devolve `False`.
+        # A diferença é de tempo: sem o cancel, cada painel desconectado deixa
+        # uma tarefa dormindo até 30 s antes de descobrir isso. Num tablet em
+        # wi-fi instável, reconectando a cada minuto, elas acumulam.
+        pingador.cancel()
+        hub.disconnect(websocket)
+
+
+async def _pingar(websocket: WebSocket) -> None:
+    """Manda `ping` enquanto a conexão viver.
+
+    Para sozinho quando o envio falha: `hub.enviar` devolve `False` e já removeu
+    o cliente. Assim a tarefa não fica girando contra um socket morto mesmo se
+    alguém esquecer o `cancel()`.
+    """
+    while True:
+        await asyncio.sleep(INTERVALO_PING)
+        if not await hub.enviar(websocket, "ping", {}):
+            return
+
+
+def _dados_da_conexao() -> dict:
+    """O que o painel precisa saber no instante em que conecta.
+
+    `paineis` inclui quem acabou de entrar. É o que permite a tela mostrar
+    "2 operadores conectados" — e perceber que ninguém mais está olhando.
+    """
+    return {"paineis": len(hub), "servidor": db.agora_iso()}
