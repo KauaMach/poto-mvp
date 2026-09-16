@@ -69,7 +69,7 @@
 | MVP-044 | Componentes `<Wordmark>` e `<StatusPill>` | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-045 | Componente `<Choice>` | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-046 | Componente `<Panic>` com pressionar-e-segurar | F5 | P0 | 042, 043 | ✅ Concluída |
-| MVP-047 | Componente `<Confirm>` | F5 | P0 | 042, 043 | Pendente |
+| MVP-047 | Componente `<Confirm>` | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-048 | Cliente de API tipado | F6 | P0 | 010, 030 | Pendente |
 | MVP-049 | Shell do totem (header/main/footer) | F6 | P0 | 044 | Pendente |
 | MVP-050 | Tela inicial com as 4 trilhas | F6 | P0 | 045, 046, 049 | Pendente |
@@ -1513,14 +1513,43 @@
 
 ### MVP-047 — Componente `<Confirm>`
 - **Descrição:** Tela de confirmação nas três variantes: neutra, padrão e crítica.
-- **Prioridade:** P0 · **Depende de:** 042, 043 · **Status:** Pendente
-- **Arquivos:** `frontend/src/componentes/Confirm.tsx`
+- **Prioridade:** P0 · **Depende de:** 042, 043 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/componentes/Confirm.tsx`, `frontend/src/Galeria.tsx`,
+  `frontend/src/App.tsx`
 - **Critérios de aceitação:**
   - Marca circular com ✓, título e protocolo em tabular
   - Variante `critico`: fundo `--rust`, texto branco
   - Variante `neutral`: fundo `--paper`, ícone `--muted`, **sem protocolo**
   - Aviso de offline em faixa `--rust-soft`
-- **Como validar:** renderizar as três variantes lado a lado
+- **Como validar:** `make frontend` → `/galeria` — as três variantes lado a lado
+
+> **A variante `neutral` recebe o protocolo e não o mostra.** Não é que o protocolo falte:
+> ele é deliberadamente ocultado. Se o agressor está a três metros, um protocolo na tela
+> transforma o socorro em risco. Quem decide isso é o backend, pelo
+> `instrucao_totem.tela_neutra` — o frontend nunca escolhe ser discreto. A marca também
+> vai em `--muted` e não em ferrugem: nada nessa tela pode chamar atenção de quem olha por
+> cima do ombro.
+>
+> A faixa de offline fica em `--rust-soft` **inclusive na variante crítica**, onde o fundo
+> já é ferrugem: o aviso precisa se destacar do fundo, não combinar com ele.
+>
+> `role="status"` + `aria-live="polite"` para o leitor de tela anunciar a confirmação sem
+> que a pessoa precise procurá-la. E o protocolo em `.tabular`, porque ele é lido em voz
+> alta para a central e copiado à mão — dígitos de largura variável atrapalham os dois.
+>
+> **Acrescentada uma galeria de componentes em `/galeria`.** Quatro tasks desta fase pedem
+> validação visual ("conferir contra `Tela-Totem.png`", "comparação lado a lado",
+> "renderizar as três variantes lado a lado", "tocar 5× rápido e confirmar que nada foi
+> criado"). Sem um lugar onde tudo apareça junto, cada conferência exigiria montar uma tela
+> descartável e nenhuma ficaria repetível. A galeria inclui o registro de acionamentos, que
+> é como se verifica o critério do `<Panic>`.
+>
+> A rota é **só de desenvolvimento**, e isso foi medido, não presumido. A primeira versão
+> usava `import` estático guardado por `import.meta.env.DEV` e eu escrevi no comentário que
+> o bundler removeria o módulo. **Estava errado:** o bundle cresceu 11,7 KB e a string da
+> galeria estava lá — um bundler não descarta um módulo só porque o único uso está atrás de
+> um `if` falso. Corrigido com `lazy(() => import(...))` dentro do guarda; o bundle voltou
+> a 220,11 KB e a galeria não aparece no `dist/`.
 
 ---
 
