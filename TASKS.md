@@ -39,7 +39,7 @@
 | MVP-014 | Schema SQLite + WAL + índices | F2 | P0 | 009 | ✅ Concluída |
 | MVP-015 | Criação de chamado com idempotência | F2 | P0 | 014 | ✅ Concluída |
 | MVP-016 | Consulta e atualização de chamados | F2 | P0 | 015 | ✅ Concluída |
-| MVP-017 | Máquina de estados (`estado_log`) | F2 | P0 | 015 | Pendente |
+| MVP-017 | Máquina de estados (`estado_log`) | F2 | P0 | 015 | ✅ Concluída |
 | MVP-018 | Testes de persistência e idempotência | F2 | P0 | 015–017 | Pendente |
 | MVP-019 | Portar datasets de triagem | F3 | P0 | 002 | Pendente |
 | MVP-020 | Classificador TF-IDF + LogReg | F3 | P0 | 019 | Pendente |
@@ -390,8 +390,17 @@
 - **Critérios de aceitação:**
   - Toda mudança de `status` grava uma linha com `de`, `para`, `created_at`
   - `listar_estados(chamado_id)` devolve em ordem cronológica
-  - Nenhuma linha é apagada ou editada
+  - Nenhuma linha é apagada ou editada — **imposto por gatilho no banco**
 - **Como validar:** criar → ack → encerrar e conferir 3+ linhas em `estado_log`
+
+> **Acrescentado durante a execução:** dois gatilhos SQLite que abortam `UPDATE` e
+> `DELETE` em `estado_log`. O critério dizia "nenhuma linha é apagada ou editada", que
+> sem isso seria só uma promessa sobre o código que escrevemos. Com os gatilhos, o
+> banco recusa — a trilha de como um chamado foi tratado passa a responder "o que
+> aconteceu naquela noite" mesmo se alguém tentar reescrevê-la.
+>
+> Consequência deliberada: um expurgo legítimo (direito ao apagamento, LGPD) exige
+> remover os gatilhos de propósito. O atrito é o ponto.
 
 ### MVP-018 — Testes de persistência e idempotência
 - **Descrição:** Cobrir criação, duplicata, listagem, filtros e transições.

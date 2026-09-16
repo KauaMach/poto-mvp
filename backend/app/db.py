@@ -72,6 +72,20 @@ CREATE TABLE IF NOT EXISTS notificacoes (
 CREATE INDEX IF NOT EXISTS idx_notif_chamado   ON notificacoes(chamado_id);
 CREATE INDEX IF NOT EXISTS idx_estado_chamado  ON estado_log(chamado_id);
 CREATE INDEX IF NOT EXISTS idx_chamados_status ON chamados(status);
+
+-- Append-only imposto pelo banco, não por disciplina de quem escreve o código.
+-- `estado_log` é a memória de como um chamado foi tratado; se ela puder ser
+-- reescrita, não serve para responder "o que aconteceu naquela noite".
+--
+-- Para um expurgo legítimo (direito ao apagamento, LGPD), os gatilhos precisam
+-- ser removidos de propósito — que é exatamente o atrito desejado.
+CREATE TRIGGER IF NOT EXISTS estado_log_sem_update
+BEFORE UPDATE ON estado_log
+BEGIN SELECT RAISE(ABORT, 'estado_log é append-only'); END;
+
+CREATE TRIGGER IF NOT EXISTS estado_log_sem_delete
+BEFORE DELETE ON estado_log
+BEGIN SELECT RAISE(ABORT, 'estado_log é append-only'); END;
 """
 
 
@@ -315,6 +329,22 @@ def atualizar_chamado(
             "SELECT * FROM chamados WHERE chamado_id = ?", (chamado_id,)
         ).fetchone()
     return _dict(linha)
+
+
+def listar_estados(chamado_id: str) -> list[dict]:
+    """A história do chamado, em ordem cronológica.
+
+    Ordena por `id` e não por `created_at`: duas transições no mesmo instante
+    (o relógio tem resolução finita) precisam sair na ordem em que de fato
+    aconteceram, e é o `id` que preserva isso.
+    """
+    with conectar() as con:
+        linhas = con.execute(
+            "SELECT de, para, created_at FROM estado_log "
+            "WHERE chamado_id = ? ORDER BY id",
+            (chamado_id,),
+        ).fetchall()
+    return [dict(x) for x in linhas]
 
 
 def ack_chamado(chamado_id: str) -> dict | None:

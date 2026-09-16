@@ -8,6 +8,7 @@ alarmes e a central despacha duas equipes.
 from __future__ import annotations
 
 import json
+import sqlite3
 import threading
 from uuid import uuid4
 
@@ -381,3 +382,91 @@ def test_segundo_ack_nao_reescreve_o_horario_original(tres_chamados):
 
 def test_ack_em_chamado_inexistente_devolve_none(banco):
     assert db.ack_chamado("CALL-2026-999999") is None
+
+
+# ===========================================================================
+# Máquina de estados (MVP-017)
+# ===========================================================================
+
+
+def test_criar_ack_encerrar_produz_a_trilha_completa(banco, roteamento):
+    """O critério de aceitação da MVP-017."""
+    c = db.criar_chamado(evento(), roteamento)
+    cid = c["chamado_id"]
+
+    db.atualizar_chamado(cid, status=StatusChamado.notificado)
+    db.ack_chamado(cid)
+    db.atualizar_chamado(cid, status=StatusChamado.encerrado)
+
+    trilha = [(e["de"], e["para"]) for e in db.listar_estados(cid)]
+    assert trilha == [
+        (None, "roteado"),
+        ("roteado", "notificado"),
+        ("notificado", "reconhecido"),
+        ("reconhecido", "encerrado"),
+    ]
+
+
+def test_listar_estados_traz_o_horario(banco, roteamento):
+    c = db.criar_chamado(evento(), roteamento)
+    for estado in db.listar_estados(c["chamado_id"]):
+        assert estado["created_at"]
+
+
+def test_listar_estados_de_chamado_inexistente(banco):
+    assert db.listar_estados("CALL-2026-999999") == []
+
+
+def test_estados_saem_em_ordem_mesmo_no_mesmo_instante(banco, roteamento):
+    """O relógio tem resolução finita: duas transições podem compartilhar o
+    mesmo `created_at`. A ordem vem do `id`, não do horário."""
+    c = db.criar_chamado(evento(), roteamento)
+    cid = c["chamado_id"]
+    sequencia = [
+        StatusChamado.notificado,
+        StatusChamado.reconhecido,
+        StatusChamado.em_atendimento,
+        StatusChamado.encerrado,
+    ]
+    for s in sequencia:
+        db.atualizar_chamado(cid, status=s)
+
+    assert [e["para"] for e in db.listar_estados(cid)] == ["roteado", *sequencia]
+
+
+def test_estado_log_recusa_update(banco, roteamento):
+    """Append-only imposto pelo banco. Se a memória de como um chamado foi
+    tratado pode ser reescrita, ela não responde 'o que aconteceu aquela noite'."""
+    c = db.criar_chamado(evento(), roteamento)
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        with db.conectar() as con:
+            con.execute(
+                "UPDATE estado_log SET para = 'falsificado' WHERE chamado_id = ?",
+                (c["chamado_id"],),
+            )
+
+
+def test_estado_log_recusa_delete(banco, roteamento):
+    c = db.criar_chamado(evento(), roteamento)
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        with db.conectar() as con:
+            con.execute(
+                "DELETE FROM estado_log WHERE chamado_id = ?", (c["chamado_id"],)
+            )
+
+
+def test_trilha_sobrevive_a_tentativa_de_adulteracao(banco, roteamento):
+    c = db.criar_chamado(evento(), roteamento)
+    cid = c["chamado_id"]
+    db.atualizar_chamado(cid, status=StatusChamado.notificado)
+    antes = db.listar_estados(cid)
+
+    for sql in (
+        "UPDATE estado_log SET para = 'x' WHERE chamado_id = ?",
+        "DELETE FROM estado_log WHERE chamado_id = ?",
+    ):
+        with pytest.raises(sqlite3.IntegrityError):
+            with db.conectar() as con:
+                con.execute(sql, (cid,))
+
+    assert db.listar_estados(cid) == antes
