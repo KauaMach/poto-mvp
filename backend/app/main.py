@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import config, db, sla
-from .api import chamados, eventos, sistema
+from .api import chamados, eventos, midia, sistema
 
 API = "/api/v1"
 
@@ -76,6 +76,7 @@ def criar_app() -> FastAPI:
     app.include_router(eventos.router, prefix=API)
     app.include_router(chamados.router, prefix=API)
     app.include_router(chamados.router_ws, prefix=API)
+    app.include_router(midia.router, prefix=API)
 
     _montar_frontend(app)
     return app

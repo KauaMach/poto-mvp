@@ -89,7 +89,7 @@
 | MVP-063 | ACK e mudança de estado | F8 | P0 | 033, 061 | ✅ Concluída |
 | MVP-064 | Contador de SLA ao vivo | F8 | P0 | 037, 061 | ✅ Concluída |
 | MVP-065 | Filtros e busca | F8 | P1 | 060 | ✅ Concluída |
-| MVP-073 | Detecção de dispositivos + `GET /dispositivos` | F8b | P0 | 026 | Pendente |
+| MVP-073 | Detecção de dispositivos + `GET /dispositivos` | F8b | P0 | 026 | ✅ Concluída |
 | MVP-074 | Captura de vídeo (picamera2 / V4L2) | F8b | P0 | 073 | Pendente |
 | MVP-077 | **Sessão de mídia com auditoria** | F8b | P0 | 073, 017 | Pendente |
 | MVP-075 | Stream MJPEG | F8b | P0 | 074, 077 | Pendente |
@@ -2368,15 +2368,54 @@
 
 ### MVP-073 — Detecção de dispositivos e `GET /dispositivos`
 - **Descrição:** Descobrir no boot quais câmeras e microfones a Pi tem e expor a lista.
-- **Prioridade:** P0 · **Depende de:** 026 · **Status:** Pendente
-- **Arquivos:** `backend/app/midia/__init__.py`, `backend/app/api/midia.py`
+- **Prioridade:** P0 · **Depende de:** 026 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/midia/__init__.py`, `backend/app/api/midia.py`,
+  `backend/app/main.py`
 - **Critérios de aceitação:**
   - Detecta câmera CSI (via `picamera2`) e câmeras USB (via `/dev/video*`)
   - Detecta entradas de áudio via ALSA
   - `GET /dispositivos` devolve `[{id, tipo, nome, dono, status, capacidades}]`
   - `dono` é o identificador da Pi — o campo já existe para, no futuro, listar dispositivos de outros aparelhos
   - **Sem hardware nenhum, devolve lista vazia** e a API sobe normalmente (degradação graciosa)
-- **Como validar:** `curl localhost:8000/api/v1/dispositivos` com e sem câmera plugada
+- **Como validar:** `curl localhost:8000/api/v1/dispositivos` — **executado na Pi real**:
+  devolve a câmera CSI `imx219` (rotação 180° detectada) e o microfone USB
+  `plughw:2,0`. Nesta máquina, sem hardware, devolve `[]` e a API sobe igual
+
+> **A primeira versão listava nove câmeras onde existe uma.** A Pi 5 expõe nove
+> `/dev/video*` para uma única câmera CSI — a interface CFE (`rp1-cfe`), sete nós do ISP
+> (`pispbe`) e o decodificador HEVC (`rpi-hevc-dec`) — e **sete deles anunciam "Video
+> Capture"**. O operador escolheria uma câmera que nunca entregaria imagem.
+>
+> A correção **não** foi acrescentar `pispbe` e `rpi-hevc-dec` a uma lista de exclusão:
+> essa lista cresceria a cada versão de kernel e falharia em silêncio no primeiro nó novo.
+> O teste passou a ser **positivo**, sobre o `Bus info`:
+>
+> ```
+> /dev/video0   platform:1f00128000.csi       ← CSI, já coberta pelo picamera2
+> /dev/video33  platform:1000880000.pisp_be   ← ISP
+> câmera USB    usb-xhci-hcd.1-1.2            ← esta
+> ```
+>
+> É a mesma escolha do `resumo()` em `canais/base.py` (MVP-028): permitir o que se conhece
+> em vez de proibir o que se lembrou. Complementado por exigir `Video Capture`
+> **single-planar** — os nós do ISP anunciam a variante *Multiplanar*, webcams UVC não.
+>
+> **`arecord` e não `sounddevice`.** O segundo é binding de PortAudio, uma biblioteca C que
+> o pacote pip **não traz**: na Pi real o import falha com
+> `OSError: PortAudio library not found`, e resolver exigiria `libportaudio2` do apt. O
+> `arecord` faz parte do `alsa-utils`, já instalado, e o critério da MVP-076 aceita os dois.
+> Verificado capturando 2 s: 64.044 bytes, exatamente 16 kHz × 16 bits × mono + cabeçalho.
+>
+> O device sai como `plughw:` e não `hw:`: o plugin de conversão do ALSA permite pedir
+> 16 kHz mono mesmo que o hardware só faça 48 kHz estéreo. Com `hw:` direto, a captura
+> falha com "Invalid argument" em metade dos microfones USB.
+>
+> A `rotacao` da CSI é lida do device-tree e **importa**: a imx219 desta Pi reporta 180°, e
+> sem aplicar isso a imagem chega de cabeça para baixo no painel.
+>
+> `obter()` redetecta em vez de usar cache: uma câmera USB pode ter sido desconectada entre
+> a listagem no painel e o pedido de sessão, e abrir um stream para um dispositivo que sumiu
+> daria erro no meio do vídeo em vez de um 404 claro.
 
 ### MVP-074 — Captura de vídeo
 - **Descrição:** Abstrair as duas origens possíveis de câmera atrás de uma interface só.
