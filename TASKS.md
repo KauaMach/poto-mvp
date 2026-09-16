@@ -100,7 +100,7 @@
 | MVP-066b | `make deploy` e build-id verificável | F9 | P0 | 066 | ✅ Concluída |
 | MVP-067 | Unit systemd na Pi (API) | F9 | P0 | 066 | ⚠️ Parcial |
 | MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | ⚠️ Parcial |
-| MVP-067c | Kiosk no Galaxy Tab A11 | F9 | P0 | 055b, 067b | Pendente |
+| MVP-067c | Kiosk no Galaxy Tab A11 | F9 | P0 | 055b, 067b | ✅ Concluída |
 | ~~MVP-068~~ | ~~Daemon do botão GPIO~~ | — | **P2** | — | Fora do MVP |
 | MVP-069 | `install-pi.sh` (sem Node) | F9 | P0 | 067b, 066b | Pendente |
 | MVP-070 | Teste de resiliência (Pi + tablet) | F9 | P0 | 069, 067c | Pendente |
@@ -2637,7 +2637,7 @@
 
 ### MVP-067c — Kiosk no Galaxy Tab A11
 - **Descrição:** Travar o tablet na aplicação, sem barra de endereço e sem sair por acidente.
-- **Prioridade:** P0 · **Depende de:** 055b, 067b · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 055b, 067b · **Status:** ✅ Concluída
 - **Arquivos:** `docs/setup-tablet.md`
 - **Critérios de aceitação — documentados passo a passo:**
   - Aplicação adicionada à tela inicial, abrindo em tela cheia
@@ -2645,7 +2645,37 @@
   - Tempo de tela desligada = **nunca**; brilho fixo
   - Notificações silenciadas; assistente de voz e gestos de navegação desativados
   - Reiniciar o tablet e retomar a aplicação em ≤ 5 toques documentados
-- **Como validar:** entregar o tablet a alguém e confirmar que não consegue sair da aplicação sem o PIN
+- **Como validar:** entregar o tablet a alguém e confirmar que não consegue sair da
+  aplicação sem o PIN — o documento termina com essa conferência e uma lista de 8 itens
+
+> **O objetivo não é "abrir a aplicação".** É deixar o tablet num estado em que alguém que
+> não conhece o projeto não consiga sair dela por acidente, e em que ele volte sozinho ao
+> totem depois de um reinício.
+>
+> **O passo que de fato tranca é "Solicitar PIN para liberar".** Sem ele a fixação de tela
+> é decoração: desafixar passa a ser um toque longo, e qualquer pessoa sai. O documento
+> marca esse item explicitamente porque é o único cuja omissão invalida todos os outros.
+>
+> **A fixação não sobrevive ao reboot** — limitação do Android, não do projeto. É por isso
+> que a retomada são **5 toques** e não 3: dois deles existem só para refixar. O documento
+> diz isso em vez de esconder, e registra que um app de kiosk dedicado seria a saída se o
+> totem for reiniciado com frequência.
+>
+> "Tempo de tela = nunca" não existe no One UI; o máximo é 10 minutos. O caminho real é
+> **Permanecer ativo** nas Opções do desenvolvedor, que mantém a tela acesa *enquanto
+> carregando* — o que casa com um aparelho de parede permanentemente no carregador.
+>
+> **Brilho adaptativo desligado**, e não só fixo: o automático escurece a tela num corredor
+> à noite, que é exatamente quando ela mais precisa ser vista.
+>
+> **Rotação automática fica ligada**, contra o instinto de travar. O layout se adapta às
+> duas orientações (MVP-055), e travar criaria um estado pior — alguém segurando o tablet
+> no eixo errado veria a tela de lado, que num pedido de socorro é atrito desnecessário.
+>
+> A conferência final tem dois itens que não são de configuração e são os que provam a
+> premissa do projeto: desligar o wifi e acionar uma trilha (confirma na hora, `· 1 na
+> fila`), e religar (a fila esvazia sozinha em ≤ 15 s). São os mesmos dois que a
+> demonstração mostra.
 
 ### ~~MVP-068 — Daemon do botão GPIO~~ → movida para P2
 - **Motivo:** o pânico no MVP é **virtual, na interface web** (MVP-046 e MVP-054). O botão
