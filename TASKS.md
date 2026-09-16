@@ -51,7 +51,7 @@
 | MVP-026 | App FastAPI + lifespan + estático | F4 | P0 | 004, 014 | ✅ Concluída |
 | MVP-027 | Hub de WebSocket | F4 | P0 | 026 | ✅ Concluída |
 | MVP-028 | Registry de canais + provider `log` | F4 | P0 | 011 | ✅ Concluída |
-| MVP-029 | Provider `webhook` | F4 | P0 | 028 | Pendente |
+| MVP-029 | Provider `webhook` | F4 | P0 | 028 | ✅ Concluída |
 | MVP-030 | `POST /eventos` | F4 | P0 | 024, 027, 028 | Pendente |
 | MVP-031 | `POST /panico` | F4 | P0 | 030 | Pendente |
 | MVP-032 | `GET /chamados` e `GET /chamados/{id}` | F4 | P0 | 016 | Pendente |
@@ -754,13 +754,45 @@
 
 ### MVP-029 — Provider `webhook`
 - **Descrição:** POST JSON para Evolution API / n8n, para WhatsApp real.
-- **Prioridade:** P0 · **Depende de:** 028 · **Status:** Pendente
-- **Arquivos:** `backend/app/canais/webhook.py`
+- **Prioridade:** P0 · **Depende de:** 028 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/canais/webhook.py`, `backend/tests/test_canais.py`
 - **Critérios de aceitação:**
   - `POST {number, text, meta}` para `POTO_NOTIF_WEBHOOK_URL`
   - Timeout de 10 s; falha devolve `(False, detalhe)` **sem** levantar exceção
   - Falha de rede não impede a criação do chamado — o registro vem primeiro
-- **Como validar:** `uv run pytest tests/test_canais.py` com `httpx` mockado
+- **Como validar:** `uv run pytest tests/test_canais.py` com `httpx` mockado — 86 testes
+  no arquivo (25 do webhook)
+
+> **"Timeout de 10 s" não é `timeout=10.0`.** O número do httpx é *por fase* — conectar,
+> escrever, ler, esperar no pool — então 10.0 ali significa até ~40 s no pior caso. No
+> caminho de uma emergência o que importa é o total, e o teto é explícito com
+> `asyncio.wait_for`. Mesma lição do hub na MVP-027.
+>
+> Provider selecionado sem `POTO_NOTIF_WEBHOOK_URL` **não** cai para o `log`: isso faria
+> o `/health` dizer "webhook" enquanto nada sai. Falha explícita, gravada em
+> `notificacoes`. É diferente do nome de provider inválido (MVP-028), que não tem
+> interpretação válida nenhuma — aqui a configuração é coerente, só está incompleta.
+>
+> `follow_redirects` fica no default `False` de propósito: seguir um 3xx mandaria o token
+> e o payload para um host que ninguém configurou.
+>
+> O token vai em `apikey` **e** `Authorization: Bearer` — a Evolution API espera o
+> primeiro, n8n o segundo, e mandar os dois faz o provider funcionar com qualquer um sem
+> configuração extra.
+>
+> **Duas das oito mutações sobreviveram na primeira rodada, e as duas eram defeito do
+> teste:**
+>
+> 1. Remover o `except httpx.HTTPError` específico não falhou nada, porque o
+>    `except Exception` genérico também captura. Mas os caminhos não são equivalentes: o
+>    genérico chama `logger.exception()`, e numa Pi com rede instável isso despejaria um
+>    traceback a cada notificação perdida, afogando os erros que de fato merecem stack
+>    trace. O teste passava porque `repr(ConnectError(...))` contém a string
+>    `"ConnectError"` — agora ele cobra o prefixo e a ausência de traceback no log.
+> 2. O teste de redirecionamento nunca mandava cabeçalho `location`. Sem ele o httpx não
+>    tem para onde seguir, e a checagem passava mesmo com `follow_redirects=True`.
+>
+> Corrigidos os dois, as 8 mutações são pegas.
 
 ### MVP-030 — `POST /eventos`
 - **Descrição:** O endpoint principal: triagem, merge protetivo, roteamento, persistência, broadcast e notificação.

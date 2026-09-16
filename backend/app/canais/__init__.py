@@ -21,12 +21,13 @@ import logging
 from .. import config, db
 from .base import NotificationProvider, montar_mensagem, montar_meta, resumo
 from .log import LogProvider
+from .webhook import WebhookProvider
 
 logger = logging.getLogger(__name__)
 
-# Providers disponíveis. O `webhook` entra aqui na MVP-029.
 PROVIDERS: dict[str, type] = {
     "log": LogProvider,
+    "webhook": WebhookProvider,
 }
 
 PROVIDER_PADRAO = "log"
@@ -126,6 +127,7 @@ __all__ = [
     "PROVIDERS",
     "LogProvider",
     "NotificationProvider",
+    "WebhookProvider",
     "montar_mensagem",
     "montar_meta",
     "notificar",

@@ -13,14 +13,17 @@ distinguível de "ninguém apareceu".
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from app import canais, config, db
-from app.canais import base
+from app.canais import base, webhook
 from app.canais.log import LogProvider, mascarar
+from app.canais.webhook import WebhookProvider
 from app.models import Gravidade, Modo, StatusChamado, TipoOcorrencia
 from app.triagem.roteador import rotear
 
@@ -584,3 +587,283 @@ async def test_chamado_recem_criado_notifica(banco, contatos):
 
     assert c["chamado_id"] in mensagem
     assert RELATO not in mensagem
+
+
+# ===========================================================================
+# Provider `webhook`
+# ===========================================================================
+#
+# Testado com `httpx.MockTransport`: exercita o caminho real do provider —
+# montagem do corpo, cabeçalhos, tratamento de status e de exceção — sem rede.
+
+
+class WebhookFalso:
+    """Endpoint de mentira. Registra o que recebeu e devolve o que mandarem."""
+
+    def __init__(self, status=200, corpo="", erro=None, demora=0.0, destino=None):
+        self.status = status
+        self.corpo = corpo
+        self.erro = erro
+        self.demora = demora
+        self.destino = destino  # Location, para o teste de redirecionamento
+        self.requisicoes: list[httpx.Request] = []
+
+    @property
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._responder)
+
+    async def _responder(self, requisicao: httpx.Request) -> httpx.Response:
+        self.requisicoes.append(requisicao)
+        if self.demora:
+            await asyncio.sleep(self.demora)
+        if self.erro is not None:
+            raise self.erro
+        cabecalhos = {"location": self.destino} if self.destino else {}
+        return httpx.Response(self.status, text=self.corpo, headers=cabecalhos)
+
+    @property
+    def urls(self) -> list[str]:
+        return [str(r.url) for r in self.requisicoes]
+
+    @property
+    def corpo_enviado(self) -> dict:
+        import json
+
+        return json.loads(self.requisicoes[0].content)
+
+
+@pytest.fixture
+def url(monkeypatch):
+    monkeypatch.setattr(config, "NOTIF_WEBHOOK_URL", "https://evolution.local/mensagem")
+    monkeypatch.setattr(config, "NOTIF_WEBHOOK_TOKEN", "")
+
+
+# --- O contrato do POST -----------------------------------------------------
+
+
+async def test_webhook_posta_na_url_configurada(url):
+    falso = WebhookFalso()
+
+    await WebhookProvider(falso.transport).enviar("5586999990001", "oi", {})
+
+    assert str(falso.requisicoes[0].url) == "https://evolution.local/mensagem"
+    assert falso.requisicoes[0].method == "POST"
+
+
+async def test_corpo_tem_number_text_e_meta(url):
+    falso = WebhookFalso()
+
+    await WebhookProvider(falso.transport).enviar(
+        "5586999990001", "corpo da mensagem", {"chamado_id": "CALL-2026-000001"}
+    )
+
+    assert falso.corpo_enviado == {
+        "number": "5586999990001",
+        "text": "corpo da mensagem",
+        "meta": {"chamado_id": "CALL-2026-000001"},
+    }
+
+
+async def test_sucesso_em_2xx(url):
+    sucesso, detalhe = await WebhookProvider(WebhookFalso(201).transport).enviar(
+        "5586999990001", "oi", {}
+    )
+    assert sucesso is True
+    assert "201" in detalhe
+
+
+@pytest.mark.parametrize("status", [400, 401, 404, 422, 500, 502, 503])
+async def test_status_de_erro_vira_falha(url, status):
+    sucesso, detalhe = await WebhookProvider(
+        WebhookFalso(status, corpo="instance not found").transport
+    ).enviar("5586999990001", "oi", {})
+
+    assert sucesso is False
+    assert str(status) in detalhe
+    assert "instance not found" in detalhe
+
+
+async def test_redirecionamento_nao_e_seguido(url, monkeypatch):
+    """Seguir um 3xx mandaria o token e o payload para um host que ninguém
+    configurou. O default do httpx já é não seguir; este teste trava a decisão,
+    para que um `follow_redirects=True` futuro não passe despercebido.
+
+    O `location` é essencial e foi o que faltou na primeira versão deste teste:
+    sem ele o httpx não tem para onde seguir, e a checagem passaria mesmo com o
+    redirecionamento ligado.
+    """
+    monkeypatch.setattr(config, "NOTIF_WEBHOOK_TOKEN", "segredo-123")
+    falso = WebhookFalso(302, destino="https://host-que-ninguem-configurou/")
+
+    sucesso, _ = await WebhookProvider(falso.transport).enviar("558699", "oi", {})
+
+    assert sucesso is False
+    assert falso.urls == ["https://evolution.local/mensagem"]
+
+
+async def test_detalhe_da_resposta_e_truncado(url):
+    """A resposta pode ser uma página de erro inteira. `notificacoes` é tabela
+    de auditoria, não lixeira de HTML."""
+    falso = WebhookFalso(500, corpo="x" * 5000)
+
+    _, detalhe = await WebhookProvider(falso.transport).enviar("558699", "oi", {})
+
+    assert len(detalhe) < webhook.LIMITE_DETALHE + 50
+
+
+# --- Falhas de rede ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "erro",
+    [
+        httpx.ConnectError("conexão recusada"),
+        httpx.ReadTimeout("leitura expirou"),
+        httpx.ConnectTimeout("conexão expirou"),
+        httpx.RemoteProtocolError("resposta malformada"),
+    ],
+)
+async def test_falha_de_rede_nao_levanta(url, erro, caplog):
+    """O chamado já está no banco quando `enviar` é chamada. Nenhuma falha aqui
+    pode virar exceção e fazer o acionamento parecer que não aconteceu.
+
+    Cobra também que a falha seja tratada como **esperada**, e não caia no
+    `except Exception` genérico. A diferença não aparece no retorno — as duas
+    devolvem `(False, ...)` — mas o caminho genérico chama `logger.exception()`.
+    Numa Pi com rede instável isso despejaria um traceback a cada notificação
+    perdida, afogando os erros que de fato merecem stack trace.
+    """
+    with caplog.at_level(logging.ERROR):
+        sucesso, detalhe = await WebhookProvider(
+            WebhookFalso(erro=erro).transport
+        ).enviar("5586999990001", "oi", {})
+
+    assert sucesso is False
+    assert detalhe.startswith(type(erro).__name__)
+    assert "inesperado" not in detalhe
+    assert "Traceback" not in caplog.text
+
+
+async def test_erro_inesperado_nao_levanta(url, caplog):
+    """Rede embaixo da rede: nem uma exceção fora da família do httpx escapa.
+
+    Aqui o traceback é bem-vindo — isto é um bug, não uma rede ruim."""
+    with caplog.at_level(logging.ERROR):
+        sucesso, detalhe = await WebhookProvider(
+            WebhookFalso(erro=ValueError("algo bem estranho")).transport
+        ).enviar("5586999990001", "oi", {})
+
+    assert sucesso is False
+    assert "inesperado" in detalhe
+    assert "algo bem estranho" in detalhe
+    assert "Traceback" in caplog.text
+
+
+async def test_timeout_e_teto_total(url, monkeypatch):
+    """O `timeout` do httpx é **por fase** — conectar, escrever, ler, esperar no
+    pool. 10.0 ali significa até ~40 s no pior caso. No caminho de uma
+    emergência o que importa é o total, então o teto é explícito.
+
+    Sem ele este teste espera a demora inteira; com ele, corta no prazo.
+    """
+    monkeypatch.setattr(webhook, "TIMEOUT", 0.05)
+    falso = WebhookFalso(demora=5.0)
+
+    sucesso, detalhe = await asyncio.wait_for(
+        WebhookProvider(falso.transport).enviar("5586999990001", "oi", {}),
+        timeout=2.0,
+    )
+
+    assert sucesso is False
+    assert "timeout" in detalhe.lower()
+
+
+# --- Configuração ausente ---------------------------------------------------
+
+
+async def test_sem_url_falha_explicitamente(monkeypatch):
+    """Provider selecionado sem URL **não** cai para o `log`: isso faria o
+    `/health` dizer "webhook" enquanto nada sai. Falha explícita, gravada."""
+    monkeypatch.setattr(config, "NOTIF_WEBHOOK_URL", "")
+    falso = WebhookFalso()
+
+    sucesso, detalhe = await WebhookProvider(falso.transport).enviar("558699", "oi", {})
+
+    assert sucesso is False
+    assert "URL" in detalhe
+    assert falso.requisicoes == []
+
+
+# --- Autenticação -----------------------------------------------------------
+
+
+async def test_token_vai_nos_dois_cabecalhos(url, monkeypatch):
+    """Evolution API espera `apikey`; n8n espera `Authorization: Bearer`.
+    Mandar os dois faz o provider funcionar com qualquer um sem configuração
+    extra — e vão para o mesmo endpoint, já escolhido pelo operador."""
+    monkeypatch.setattr(config, "NOTIF_WEBHOOK_TOKEN", "segredo-123")
+    falso = WebhookFalso()
+
+    await WebhookProvider(falso.transport).enviar("558699", "oi", {})
+
+    cabecalhos = falso.requisicoes[0].headers
+    assert cabecalhos["apikey"] == "segredo-123"
+    assert cabecalhos["authorization"] == "Bearer segredo-123"
+
+
+async def test_sem_token_nao_manda_cabecalho(url):
+    falso = WebhookFalso()
+
+    await WebhookProvider(falso.transport).enviar("558699", "oi", {})
+
+    cabecalhos = falso.requisicoes[0].headers
+    assert "apikey" not in cabecalhos
+    assert "authorization" not in cabecalhos
+
+
+# --- Integração com o registry e o registro ---------------------------------
+
+
+def test_registry_conhece_o_webhook(monkeypatch):
+    monkeypatch.setattr(config, "NOTIF_PROVIDER", "webhook")
+    assert canais.obter_provider().nome == "webhook"
+
+
+async def test_relato_nao_sai_no_corpo_do_webhook(banco, contatos, url):
+    """O caminho completo até o fio: o que chega ao endpoint externo."""
+    c = criar_chamado_real()
+    falso = WebhookFalso()
+
+    await canais.notificar(c, "csv", provider=WebhookProvider(falso.transport))
+
+    assert RELATO not in falso.requisicoes[0].content.decode()
+
+
+async def test_falha_do_webhook_e_gravada(banco, contatos, url):
+    c = criar_chamado_real()
+    falso = WebhookFalso(502, corpo="bad gateway")
+
+    sucesso, _ = await canais.notificar(
+        c, "csv", provider=WebhookProvider(falso.transport)
+    )
+
+    registro = db.listar_notificacoes(c["chamado_id"])[0]
+    assert sucesso is False
+    assert registro["provider"] == "webhook"
+    assert "502" in registro["detalhe"]
+
+
+async def test_falha_de_rede_nao_desfaz_o_chamado(banco, contatos, url):
+    """O critério da MVP-029, verificado no banco: o registro vem primeiro e
+    sobrevive à falha do aviso. É o que permite o SLA escalonar depois
+    (MVP-038) em vez de a emergência simplesmente sumir."""
+    c = criar_chamado_real()
+    falso = WebhookFalso(erro=httpx.ConnectError("sem rota para o host"))
+
+    await canais.notificar(c, "csv", provider=WebhookProvider(falso.transport))
+
+    persistido = db.obter_chamado(c["chamado_id"])
+    assert persistido is not None
+    assert persistido["status"] == StatusChamado.roteado
+    assert persistido["texto_livre"] == RELATO
+    assert db.listar_notificacoes(c["chamado_id"])[0]["sucesso"] is False
