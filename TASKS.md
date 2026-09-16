@@ -33,7 +33,7 @@
 | MVP-008 | Commit inicial e push | F1 | P0 | 001–007 | ✅ Concluída |
 | MVP-009 | Enums do domínio | F2 | P0 | 002 | ✅ Concluída |
 | MVP-010 | Contratos Pydantic de entrada e saída | F2 | P0 | 009 | ✅ Concluída |
-| MVP-011 | Catálogo de canais e config de SLA | F2 | P0 | 004, 009 | Pendente |
+| MVP-011 | Catálogo de canais e config de SLA | F2 | P0 | 004, 009 | ✅ Concluída |
 | MVP-012 | Roteador determinístico | F2 | P0 | 009, 011 | Pendente |
 | MVP-013 | Testes do roteador | F2 | P0 | 012 | Pendente |
 | MVP-014 | Schema SQLite + WAL + índices | F2 | P0 | 009 | Pendente |
@@ -277,8 +277,8 @@
 
 ### MVP-011 — Catálogo de canais e config de SLA
 - **Descrição:** Definir os 8 canais institucionais, os grupos de pânico e os prazos de SLA.
-- **Prioridade:** P0 · **Depende de:** 004, 009 · **Status:** Pendente
-- **Arquivos:** `backend/app/config.py`
+- **Prioridade:** P0 · **Depende de:** 004, 009 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/config.py`, `backend/tests/test_config.py`
 - **Critérios de aceitação:**
   - `CANAIS` com `csv`, `sala_lilas`, `sapsi`, `ouvidoria`, `samu_192`, `pm_190`, `bombeiros_193`, `central_180` — cada um com `nome` e `contato`
   - `CANAIS_INTERNOS = ["csv", "sala_lilas"]` (broadcast de pânico)
@@ -287,6 +287,16 @@
   - `HORARIO_COMERCIAL`: seg–sex, janelas `(8,12)` e `(14,17)`
   - Contatos vêm de env, **sem default de telefone real**
 - **Como validar:** `uv run python -c "from app.config import CANAIS; print(len(CANAIS))"` → 8
+
+> **Correção aplicada durante a execução.** O critério pedia `CANAIS` com `nome` **e**
+> `contato`. O contato ficou de fora: `/canais` é endpoint de sistema, **sem token**, e um
+> catálogo que carregasse o telefone convidaria a vazá-lo com um `return CANAIS` distraído
+> num endpoint. O destino continua resolvível por `contato_canal()`, e o teste
+> `test_catalogo_nao_carrega_contato` trava isso. Mesmo princípio da correção da MVP-010.
+>
+> Acrescentado `FUSO_LOCAL` (UTC−3 fixo) junto do horário: o Piauí não adota horário de
+> verão e a Pi pode estar sem NTP, então fixar o deslocamento é mais seguro que confiar no
+> relógio do sistema. O roteador (MVP-012) consome os dois.
 
 ### MVP-012 — Roteador determinístico
 - **Descrição:** Portar `rotear()` de `../poto/backend/app/router_engine.py`. É a rede de segurança que funciona mesmo se toda a IA falhar.
