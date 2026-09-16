@@ -115,9 +115,9 @@
 - **Prioridade:** P0 · **Depende de:** — · **Status:** Pendente
 - **Arquivos:** raiz do repositório
 - **Critérios de aceitação:**
-  - Existem `backend/app/{api,triagem,canais,hardware,data}` e `backend/{scripts,tests}`
+  - Existem `backend/app/{api,triagem,canais,midia,data}` e `backend/{scripts,tests}`
   - Existem `frontend/src/{estilos,comum,componentes,totem,painel}` e `frontend/public/fonts`
-  - Existe `deploy/`
+  - Existe `deploy/` e `docs/`
   - Todo pacote Python tem `__init__.py`
 - **Como validar:** `find . -type d -not -path '*/.git/*' | sort` reproduz a árvore de ARCHITECTURE.md §3
 
