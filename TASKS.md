@@ -26,7 +26,7 @@
 | MVP-001 | Estrutura de diretórios do projeto | F1 | P0 | — | ✅ Concluída |
 | MVP-002 | Scaffold do backend (FastAPI + uv) | F1 | P0 | 001 | ✅ Concluída |
 | MVP-003 | Scaffold do frontend (React + Vite + TS) | F1 | P0 | 001 | ✅ Concluída |
-| MVP-004 | `.env.example` e carregamento de config | F1 | P0 | 002 | Pendente |
+| MVP-004 | `.env.example` e carregamento de config | F1 | P0 | 002 | ✅ Concluída |
 | MVP-005 | `.gitignore` | F1 | P0 | 001 | ✅ Concluída |
 | MVP-006 | Lint e formatação (ruff + eslint) | F1 | P1 | 002, 003 | Pendente |
 | MVP-007 | Makefile com alvos de desenvolvimento | F1 | P0 | 002, 003 | Pendente |
@@ -172,7 +172,7 @@
 
 ### MVP-004 — `.env.example` e carregamento de config
 - **Descrição:** Definir todas as variáveis de ambiente com defaults seguros e um módulo `config.py` que as lê.
-- **Prioridade:** P0 · **Depende de:** 002 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 002 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/.env.example`, `backend/app/config.py`
 - **Critérios de aceitação:**
   - Variáveis: `POTO_DB_PATH`, `POTO_NOTIF_PROVIDER`, `POTO_NOTIF_WEBHOOK_URL`, `POTO_CONTACT_*`, `POTO_SLA_CHECK_INTERVAL`, `POTO_PAINEL_TOKEN`, `POTO_CORS_ORIGINS`, `POTO_CLF_PATH`
