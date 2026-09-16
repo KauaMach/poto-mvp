@@ -227,3 +227,55 @@
     opacity: 1;
   }
 }
+
+/* --- Ações do operador (MVP-063) ------------------------------------------ */
+
+.poto-card-acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+/* 40px e não os 64px do totem: o painel é operado com mouse, e 64px
+ * desperdiçariam altura numa lista de vinte cartões. Continua acima do mínimo
+ * de 24px da WCAG 2.5.8. */
+.poto-botao-primario,
+.poto-seletor select {
+  min-height: 40px;
+  min-width: 0;
+}
+
+.poto-botao-primario {
+  padding: 0 var(--space-md);
+  border-radius: var(--r-pill);
+  background: var(--rust);
+  color: #fff;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.poto-botao-primario:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (hover: hover) {
+  .poto-botao-primario:hover:not(:disabled) {
+    background: var(--rust-d);
+  }
+}
+
+.poto-seletor select {
+  padding: 0 var(--space-sm);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}

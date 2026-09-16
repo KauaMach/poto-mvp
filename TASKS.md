@@ -86,7 +86,7 @@
 | MVP-060 | Shell e lista do painel | F8 | P0 | 032, 042 | ✅ Concluída |
 | MVP-061 | Card de chamado com gravidade | F8 | P0 | 060 | ✅ Concluída |
 | MVP-062 | WebSocket em tempo real no painel | F8 | P0 | 035, 060 | ✅ Concluída |
-| MVP-063 | ACK e mudança de estado | F8 | P0 | 033, 061 | Pendente |
+| MVP-063 | ACK e mudança de estado | F8 | P0 | 033, 061 | ✅ Concluída |
 | MVP-064 | Contador de SLA ao vivo | F8 | P0 | 037, 061 | Pendente |
 | MVP-065 | Filtros e busca | F8 | P1 | 060 | Pendente |
 | MVP-073 | Detecção de dispositivos + `GET /dispositivos` | F8b | P0 | 026 | Pendente |
@@ -2236,14 +2236,45 @@
 
 ### MVP-063 — ACK e mudança de estado
 - **Descrição:** Ações do operador.
-- **Prioridade:** P0 · **Depende de:** 033, 061 · **Status:** Pendente
-- **Arquivos:** `frontend/src/painel/CardChamado.tsx`
+- **Prioridade:** P0 · **Depende de:** 033, 061 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/painel/CardChamado.tsx`, `frontend/src/comum/api.ts`,
+  `frontend/src/estilos/painel.css`
 - **Critérios de aceitação:**
   - Botão "Reconhecer" chama `/ack` e some após sucesso
   - Seletor de estado: `em_atendimento`, `encerrado`
   - Mudança reflete no totem via WS (visível no alerta ativo)
   - Botão desabilitado durante a requisição
-- **Como validar:** dar ACK e ver o totem mudar para "A central recebeu seu alerta"
+- **Como validar:** dar ACK e ver o totem mudar para "A central recebeu seu alerta" —
+  **verificado de ponta a ponta:** pânico em `alerta_ativo` → ACK no painel →
+  `atualizado` no WS → `reconhecido` → a tela do totem passa a mostrar "Central recebeu";
+  e o `PATCH` para `em_atendimento` chega como "Atendimento a caminho"
+
+> **O botão some porque a condição que o traz desaparece**, não porque guardamos "já
+> cliquei": `acked_at` deixa de ser nulo e o cartão re-renderiza. Não há estado local de
+> clique a manter em sincronia — o dado é a fonte, e é isso que faz o botão sumir também
+> quando **outro operador** reconhece, via WebSocket.
+>
+> `reconhecido` **não** está no seletor de estados, e a omissão é deliberada: ele vem do
+> botão "Reconhecer", que grava também o `acked_at` de onde sai a métrica de tempo até o
+> reconhecimento. Oferecê-lo no seletor daria dois caminhos para a mesma transição, e um
+> deles **não pararia o relógio do SLA**. `cancelado` também fica fora: marcar um pedido de
+> socorro como trote merece mais atrito que um item de lista suspensa.
+>
+> O seletor tem `value=""` fixo em vez de espelhar o status: ele é um **disparador de
+> ação**, não um espelho do estado. Mostrar o estado atual ali convidaria o operador a
+> "voltar" mudando a seleção, e o rodapé já diz em que estado o chamado está.
+>
+> A trava acontece **antes de qualquer `await`**. Dois cliques rápidos no "Reconhecer"
+> mandariam dois POST; o segundo é inofensivo (o backend preserva o `acked_at` original —
+> MVP-033), mas o cartão piscaria duas vezes, e num painel de vinte cartões isso é o
+> operador perdendo o lugar.
+>
+> Falha silenciosa é escolha: se a ação chegou, o WebSocket corrige o estado sozinho; se
+> não chegou, o operador tenta de novo. Um alerta de erro seria uma caixa para fechar no
+> meio de uma emergência.
+>
+> Alvos de 40px e não os 64px do totem: o painel é operado com mouse, e 64px
+> desperdiçariam altura numa lista longa. Continua acima do mínimo de 24px da WCAG 2.5.8.
 
 ### MVP-064 — Contador de SLA ao vivo
 - **Descrição:** O prazo correndo na tela — o fail-safe visível.

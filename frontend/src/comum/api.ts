@@ -187,6 +187,16 @@ export function ackChamado(chamadoId: string): Promise<Chamado> {
   );
 }
 
+export function atualizarChamado(
+  chamadoId: string,
+  mudanca: { status?: string; observacao?: string },
+): Promise<Chamado> {
+  return requisitar<Chamado>(`/chamados/${encodeURIComponent(chamadoId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(mudanca),
+  });
+}
+
 export function escalonarChamado(
   chamadoId: string,
   canal: string,

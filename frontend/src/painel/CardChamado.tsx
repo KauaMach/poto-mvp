@@ -9,15 +9,35 @@
  * ~8% dos homens com alguma deficiência na percepção de vermelho e verde, e
  * este é um painel de emergência.
  *
- * As ações do operador são a MVP-063; o contador de SLA é a MVP-064.
+ * As ações do operador (MVP-063) ficam no rodapé e só aparecem em chamado que
+ * ainda espera alguém. O contador de SLA é a MVP-064.
  */
-import type { Chamado } from "../comum/tipos";
+import { useCallback, useState } from "react";
+import { ackChamado, atualizarChamado } from "../comum/api";
+import type { Chamado, StatusChamado } from "../comum/tipos";
+import { Sym } from "../componentes/Sym";
 import {
+  ABERTOS,
   COR_GRAVIDADE,
   ROTULO_GRAVIDADE,
   ROTULO_STATUS,
   TITULO_TIPO,
 } from "./rotulos";
+
+/* Estados que o operador escolhe no seletor.
+ *
+ * `reconhecido` **não** está aqui, e a omissão é deliberada: ele vem do botão
+ * "Reconhecer", que grava também o `acked_at` de onde sai a métrica de tempo
+ * até o reconhecimento. Oferecê-lo no seletor daria dois caminhos para a mesma
+ * transição, e um deles não pararia o relógio do SLA.
+ *
+ * `cancelado` também fica fora: marcar um pedido de socorro como trote é uma
+ * decisão que merece mais atrito que um item de lista suspensa.
+ */
+const TRANSICOES: { valor: StatusChamado; rotulo: string }[] = [
+  { valor: "em_atendimento", rotulo: "Em atendimento" },
+  { valor: "encerrado", rotulo: "Encerrado" },
+];
 
 type Props = {
   chamado: Chamado;
@@ -26,7 +46,31 @@ type Props = {
   slaSegundos: number | null;
 };
 
-export function CardChamado({ chamado }: Props) {
+export function CardChamado({ chamado, onMudou }: Props) {
+  const [ocupado, setOcupado] = useState(false);
+  const aberto = ABERTOS.has(chamado.status);
+
+  const agir = useCallback(
+    async (acao: () => Promise<Chamado>) => {
+      /* Trava antes de qualquer `await`: dois cliques rápidos no "Reconhecer"
+       * mandariam dois POST. O segundo é inofensivo — o backend preserva o
+       * `acked_at` original (MVP-033) — mas o cartão piscaria duas vezes, e
+       * num painel de vinte cartões isso é o operador perdendo o lugar. */
+      setOcupado(true);
+      try {
+        onMudou(await acao());
+      } catch {
+        /* Mantém o cartão como está. Se a ação chegou, o WebSocket corrige o
+         * estado sozinho (MVP-062); se não chegou, o operador tenta de novo.
+         * Um alerta de erro aqui seria uma caixa para fechar no meio de uma
+         * emergência. */
+      } finally {
+        setOcupado(false);
+      }
+    },
+    [onMudou],
+  );
+
   return (
     <article
       className="poto-card"
@@ -84,6 +128,56 @@ export function CardChamado({ chamado }: Props) {
 
       <footer className="poto-card-rodape">
         <span className="poto-status">{ROTULO_STATUS[chamado.status]}</span>
+
+        <div className="poto-card-acoes">
+          {/* Some depois do sucesso porque desaparece a condição que o traz:
+            * `acked_at` deixa de ser nulo. Não há estado de "já cliquei" a
+            * manter — o dado é a fonte. */}
+          {aberto && chamado.acked_at === null && (
+            <button
+              type="button"
+              className="poto-botao-primario"
+              disabled={ocupado}
+              onClick={() => void agir(() => ackChamado(chamado.chamado_id))}
+            >
+              <Sym nome="check" tamanho="sm" cor="#fff" />
+              Reconhecer
+            </button>
+          )}
+
+          {(aberto ||
+            chamado.status === "reconhecido" ||
+            chamado.status === "em_atendimento") && (
+            <label className="poto-seletor">
+              <span className="visually-hidden">
+                Mudar estado de {chamado.chamado_id}
+              </span>
+              {/* Valor fixo em "" e não controlado pelo status: o seletor é um
+                * disparador de ação, não um espelho do estado. Mostrar o
+                * estado atual ali convidaria o operador a "voltar" mudando a
+                * seleção, e o rodapé já diz em que estado o chamado está. */}
+              <select
+                value=""
+                disabled={ocupado}
+                onChange={(e) => {
+                  const destino = e.target.value as StatusChamado;
+                  if (destino) {
+                    void agir(() =>
+                      atualizarChamado(chamado.chamado_id, { status: destino }),
+                    );
+                  }
+                }}
+              >
+                <option value="">Mudar estado…</option>
+                {TRANSICOES.filter((t) => t.valor !== chamado.status).map((t) => (
+                  <option key={t.valor} value={t.valor}>
+                    {t.rotulo}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
       </footer>
     </article>
   );
