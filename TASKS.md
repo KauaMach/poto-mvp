@@ -99,7 +99,7 @@
 | MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | ✅ Concluída |
 | MVP-066b | `make deploy` e build-id verificável | F9 | P0 | 066 | ✅ Concluída |
 | MVP-067 | Unit systemd na Pi (API) | F9 | P0 | 066 | ⚠️ Parcial |
-| MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | Pendente |
+| MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | ⚠️ Parcial |
 | MVP-067c | Kiosk no Galaxy Tab A11 | F9 | P0 | 055b, 067b | Pendente |
 | ~~MVP-068~~ | ~~Daemon do botão GPIO~~ | — | **P2** | — | Fora do MVP |
 | MVP-069 | `install-pi.sh` (sem Node) | F9 | P0 | 067b, 066b | Pendente |
@@ -2600,14 +2600,40 @@
 
 ### MVP-067b — Endereçamento estável da Pi
 - **Descrição:** O tablet abre uma URL fixa; ela não pode mudar a cada reboot.
-- **Prioridade:** P0 · **Depende de:** 067 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 067 · **Status:** ⚠️ Parcial — script escrito e
+  executado; **o teste do tablet exige a Pi**
 - **Arquivos:** `deploy/install-pi.sh`
 - **Critérios de aceitação:**
-  - `avahi-daemon` instalado e ativo; hostname `poto` → `poto.local` resolve
+  - `avahi-daemon` instalado e ativo; `<hostname>.local` resolve — **ver a correção
+    abaixo: o hostname não é trocado para `poto`**
   - IP estático documentado como plano B (reserva DHCP ou `dhcpcd.conf`)
   - O script imprime **as duas** URLs ao final
   - `curl http://poto.local:8000/api/v1/health` responde de outro dispositivo da rede
-- **Como validar:** do tablet, abrir `http://poto.local:8000` e carregar a aplicação
+- **Como validar:** do tablet, abrir `http://<hostname>.local:8000` — **não executado**
+  (Pi inalcançável deste ambiente). O script foi **rodado aqui** de ponta a ponta: detectou
+  o avahi ativo, resolveu o `.local`, leu IP, MAC e gateway reais, e a saída é **idêntica
+  em duas execuções seguidas** (idempotente)
+
+> **Correção ao plano: o script não troca o hostname para `poto`.** A Pi deste projeto se
+> chama `RaspPoto`, e é assim que ela aparece em `docs/conexao-ssh.md` e na memória de quem
+> usa. Renomear silenciosamente quebraria o acesso SSH documentado e faria a próxima
+> conexão falhar sem explicação. O script trabalha com o hostname que existe e documenta o
+> comando para trocar de propósito — junto do lembrete de atualizar o doc e o `PI_HOST` do
+> Makefile.
+>
+> **As duas URLs são impressas, e o critério insiste nisso por um bom motivo.** O mDNS
+> falha em dois casos reais: rede que bloqueia multicast — comum em wifi
+> corporativo/universitário, que é exatamente o caso da UFPI — e cliente sem suporte.
+> Imprimir só a `.local` deixaria a pessoa sem saída no momento em que ela falhasse.
+>
+> O plano B é **IP estável**, não "o IP atual". Um IP por DHCP muda quando o roteador
+> reinicia, e aí o atalho do tablet aponta para nada. O script monta os dois caminhos com
+> os valores reais lidos da máquina — reserva no roteador (preferida, porque não muda nada
+> na Pi) e `nmcli` com o MAC e o gateway já preenchidos.
+>
+> `systemctl enable --now` é idempotente por natureza: em serviço já ativo, não faz nada. O
+> `avahi-resolve` que falha é **aviso, não erro** — o daemon leva alguns segundos para
+> anunciar, e o plano B continua valendo.
 
 ### MVP-067c — Kiosk no Galaxy Tab A11
 - **Descrição:** Travar o tablet na aplicação, sem barra de endereço e sem sair por acidente.
