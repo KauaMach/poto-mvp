@@ -50,7 +50,7 @@
 | MVP-025 | Suíte de regressão de segurança | F3 | P0 | 024 | ✅ Concluída |
 | MVP-026 | App FastAPI + lifespan + estático | F4 | P0 | 004, 014 | ✅ Concluída |
 | MVP-027 | Hub de WebSocket | F4 | P0 | 026 | ✅ Concluída |
-| MVP-028 | Registry de canais + provider `log` | F4 | P0 | 011 | Pendente |
+| MVP-028 | Registry de canais + provider `log` | F4 | P0 | 011 | ✅ Concluída |
 | MVP-029 | Provider `webhook` | F4 | P0 | 028 | Pendente |
 | MVP-030 | `POST /eventos` | F4 | P0 | 024, 027, 028 | Pendente |
 | MVP-031 | `POST /panico` | F4 | P0 | 030 | Pendente |
@@ -710,15 +710,47 @@
 
 ### MVP-028 — Registry de canais + provider `log`
 - **Descrição:** Arquitetura plugável de notificação, com payload mínimo por LGPD.
-- **Prioridade:** P0 · **Depende de:** 011 · **Status:** Pendente
-- **Arquivos:** `backend/app/canais/{__init__,base,log}.py`
+- **Prioridade:** P0 · **Depende de:** 011 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/canais/{__init__,base,log}.py`, `backend/app/db.py`,
+  `backend/tests/test_canais.py`
 - **Critérios de aceitação:**
   - `Protocol NotificationProvider` com `enviar(destino, mensagem, meta) -> (bool, str)`
   - `montar_mensagem(chamado)` inclui protocolo, tipo, gravidade e totem
   - **`texto_livre` NUNCA entra na mensagem** — teste explícito para isso
   - Provider escolhido por `POTO_NOTIF_PROVIDER`, default `log`
   - Toda tentativa é gravada em `notificacoes`
-- **Como validar:** `uv run pytest tests/test_canais.py::test_payload_sem_relato`
+- **Como validar:** `uv run pytest tests/test_canais.py::test_payload_sem_relato` — 61 testes
+
+> **O critério fala da mensagem, mas o vazamento fácil é o `meta`.** Ele é o corpo JSON
+> do webhook: passar o chamado inteiro ali mandaria o relato para fora *sem que ninguém
+> notasse*, porque o texto da mensagem continuaria impecável. Por isso a garantia não é
+> uma f-string cuidadosa — `resumo()` copia uma **lista de campos permitidos**
+> (`CAMPOS_NOTIFICAVEIS`), e mensagem e `meta` leem os dois de lá.
+>
+> A diferença entre permitir e proibir é o ponto: uma coluna nova no schema amanhã
+> (transcrição de áudio, anexo, coordenada) não vaza por esquecimento. Vazaria pelo
+> caminho oposto — alguém teria que acrescentá-la à lista, e essa linha aparece no diff.
+> Verificado por mutação: a forma com lista de *proibidos* passa por
+> `test_payload_sem_relato` e só é pega pelos testes estruturais. O teste por valor
+> sozinho a deixaria passar.
+>
+> **`enviar` é assíncrono.** O webhook da MVP-029 tem timeout de 10 s; num provider
+> síncrono esses 10 s congelariam o event loop inteiro — painel, WebSocket e o
+> acionamento de qualquer outro totem. Numa Pi de um processo só, uma notificação lenta
+> pararia o sistema.
+>
+> Duas degradações honestas, no mesmo espírito do classificador ausente: provider com
+> nome inválido cai no `log` em vez de impedir o serviço de subir (erro de digitação não
+> derruba um totem de emergência), e canal sem contato configurado não é acionado — mas a
+> tentativa **é gravada como falha**, para que o painel mostre *por que* ninguém foi
+> avisado em vez de um silêncio sem explicação.
+>
+> `mascarar()` corta o contato no log: journald é copiado, colado em chat de suporte,
+> anexado a relatório. Os últimos quatro dígitos bastam para distinguir o CSV da Sala
+> Lilás, que é o único uso legítimo do número ali.
+>
+> Foram acrescentados a `db.py` os dois lados do registro: `registrar_notificacao()` e
+> `listar_notificacoes()` (esta última exigida pela MVP-032).
 
 ### MVP-029 — Provider `webhook`
 - **Descrição:** POST JSON para Evolution API / n8n, para WhatsApp real.

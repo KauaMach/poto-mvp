@@ -347,6 +347,74 @@ def listar_estados(chamado_id: str) -> list[dict]:
     return [dict(x) for x in linhas]
 
 
+def registrar_notificacao(
+    chamado_id: str,
+    canal: str,
+    destino: str,
+    provider: str,
+    sucesso: bool,
+    *,
+    mensagem: str | None = None,
+    detalhe: str | None = None,
+    escalonamento: bool = False,
+) -> None:
+    """Grava uma tentativa de acionamento — inclusive as que falharam.
+
+    **Toda** tentativa entra aqui, e é de propósito: quando alguém pergunta
+    "por que ninguém apareceu naquela noite", a resposta precisa estar no
+    banco. Registrar só os sucessos deixaria o silêncio indistinguível de
+    nunca ter tentado.
+
+    É também onde o `destino` fica. Ele não aparece em resposta de endpoint
+    aberto (ver `models.py`); mora nesta tabela, atrás do token do painel.
+    """
+    with conectar() as con:
+        con.execute(
+            """INSERT INTO notificacoes
+               (chamado_id, canal, destino, provider, sucesso, mensagem,
+                detalhe, escalonamento, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                chamado_id,
+                canal,
+                destino,
+                provider,
+                int(sucesso),
+                mensagem,
+                detalhe,
+                int(escalonamento),
+                agora_iso(),
+            ),
+        )
+
+
+def listar_notificacoes(chamado_id: str) -> list[dict]:
+    """Tentativas de acionamento de um chamado, em ordem cronológica.
+
+    Ordena por `id` pelo mesmo motivo de `listar_estados`: um broadcast de
+    pânico dispara canais em paralelo e grava tudo no mesmo instante.
+    """
+    with conectar() as con:
+        linhas = con.execute(
+            "SELECT * FROM notificacoes WHERE chamado_id = ? ORDER BY id",
+            (chamado_id,),
+        ).fetchall()
+    return [_notificacao(x) for x in linhas]
+
+
+def _notificacao(linha: sqlite3.Row) -> dict:
+    """Converte os `INTEGER` de flag do SQLite em `bool`.
+
+    O SQLite não tem booleano. Devolver `0`/`1` aqui faria o Pydantic da API
+    expor `sucesso: 0` — e um `if notificacao["sucesso"]` continuaria correto,
+    então o erro só apareceria na tela do painel.
+    """
+    dados = dict(linha)
+    dados["sucesso"] = bool(dados["sucesso"])
+    dados["escalonamento"] = bool(dados["escalonamento"])
+    return dados
+
+
 def ack_chamado(chamado_id: str) -> dict | None:
     """Operador reconhece o chamado: para o relógio do SLA.
 
