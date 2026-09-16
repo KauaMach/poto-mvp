@@ -78,7 +78,7 @@
 | MVP-053 | Modo discreto | F6 | P0 | 051 | ✅ Concluída |
 | MVP-054 | Tela de alerta ativo (pânico) | F6 | P0 | 031, 051 | ✅ Concluída |
 | MVP-055 | Layout fluido: tablet (2 orientações) e desktop | F6 | P0 | 050, 054 | ⚠️ Parcial |
-| MVP-055b | Manifest e modo autônomo no tablet | F6 | P0 | 055 | Pendente |
+| MVP-055b | Manifest e modo autônomo no tablet | F6 | P0 | 055 | ✅ Concluída |
 | MVP-056 | Acessibilidade AA | F6 | P1 | 055 | Pendente |
 | MVP-057 | Fila offline em `localStorage` | F7 | P0 | 048 | Pendente |
 | MVP-058 | Dreno automático e badge de fila | F7 | P0 | 057 | Pendente |
@@ -1903,14 +1903,33 @@
 
 ### MVP-055b — Manifest e modo autônomo no tablet
 - **Descrição:** Fazer o Chrome abrir a aplicação em tela cheia, sem barra de endereço.
-- **Prioridade:** P0 · **Depende de:** 055 · **Status:** Pendente
-- **Arquivos:** `frontend/public/manifest.webmanifest`, `index.html`
+- **Prioridade:** P0 · **Depende de:** 055 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/public/manifest.webmanifest`, `frontend/index.html`,
+  `frontend/public/icones/poto-{192,512}.png`
 - **Critérios de aceitação:**
   - `display: "fullscreen"`, `orientation: "any"` (o layout se adapta — não travar)
   - `theme_color: "#C0392B"`, `background_color: "#FBF9F6"`, ícones 192 e 512
   - "Adicionar à tela inicial" abre sem barra de endereço
   - `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`
-- **Como validar:** adicionar à tela inicial no Tab A11 e abrir pelo ícone
+- **Como validar:** adicionar à tela inicial no Tab A11 e abrir pelo ícone — manifest
+  validado por campo; a instalação depende do aparelho
+
+> **`display: fullscreen` esconde a barra de endereço**, que num totem de parede não é
+> conveniência: é superfície para alguém navegar para fora da aplicação. `display_override`
+> cai para `standalone` onde `fullscreen` não é suportado — sem ele o navegador voltaria
+> direto para `browser`, com a barra.
+>
+> **`orientation: "any"` e não travado.** Travar em paisagem pareceria proteger o layout,
+> mas o layout já se adapta (MVP-055) e travar criaria um estado pior: alguém segurando o
+> tablet no eixo errado veria a tela de lado, e num pedido de socorro isso é atrito
+> desnecessário.
+>
+> Os ícones PNG são **gerados por script** em vez de acrescentar uma biblioteca de imagem:
+> o desenho é um círculo de ferrugem sobre papel, o mesmo ponto que o wordmark usa nos
+> separadores. Sem texto — 192 px não comporta "P.O.T.O" em Michroma de forma legível, e um
+> ícone com texto ilegível é pior que um símbolo. O círculo ocupa ~58% do lado para
+> sobreviver ao recorte da máscara adaptativa do Android, que corta até ~20% da borda; daí
+> também a entrada `purpose: "maskable"`.
 
 ### MVP-056 — Acessibilidade AA
 - **Descrição:** Contraste, foco e semântica.

@@ -13,6 +13,12 @@
           type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/material-symbols-rounded.woff2" as="font"
           type="font/woff2" crossorigin />
+    <!-- Modo autônomo no tablet (MVP-055b). `display: fullscreen` esconde a
+         barra de endereço, que num totem de parede é superfície para alguém
+         navegar para fora da aplicação. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icones/poto-192.png" />
+
     <title>P.O.T.O — Totem de Segurança</title>
   </head>
   <body>
