@@ -160,3 +160,50 @@ def test_api_funciona_com_o_frontend_montado(banco, com_frontend):
 def test_docs_continuam_acessiveis(banco, com_frontend):
     with TestClient(criar_app()) as cliente:
         assert cliente.get("/docs").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# WebSocket em caminho desconhecido
+# ---------------------------------------------------------------------------
+#
+# O estático montado na raiz recebe tudo que o router não casou — inclusive
+# conexões WebSocket. O `StaticFiles` do Starlette abre com
+# `assert scope["type"] == "http"`, então sem tratamento o resultado é um
+# `AssertionError` virando 500 com traceback no log.
+#
+# Encontrado ao digitar `/api/v1/ws/painel` em vez de `/api/v1/ws`.
+
+
+@pytest.mark.parametrize(
+    "caminho",
+    [
+        "/api/v1/ws/painel",  # o erro de digitação que revelou o bug
+        "/api/v1/ws-errado",
+        "/ws",  # fora do prefixo da API
+        "/qualquer-coisa",
+    ],
+)
+def test_websocket_em_caminho_desconhecido_e_recusado(banco, com_frontend, caminho):
+    """Recusa limpa, não 500.
+
+    `WebSocketDisconnect` é como o `TestClient` reporta uma recusa de
+    handshake. O que este teste protege é o **contrário**: que não venha um
+    `AssertionError`, que é o que acontecia antes.
+    """
+    from starlette.websockets import WebSocketDisconnect
+
+    with TestClient(criar_app()) as cliente:
+        with pytest.raises(WebSocketDisconnect):
+            with cliente.websocket_connect(caminho):
+                pass
+
+
+def test_websocket_do_painel_continua_conectando(banco, com_frontend):
+    """O par positivo do teste acima.
+
+    Sem ele, recusar **todo** WebSocket passaria pelo teste anterior — e o
+    painel pararia de receber atualizações em tempo real sem nada acusar.
+    """
+    with TestClient(criar_app()) as cliente:
+        with cliente.websocket_connect("/api/v1/ws") as ws:
+            assert ws.receive_json()["evento"] == "conectado"

@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.websockets import WebSocketClose
 
 from . import config, db, sla
 from .api import chamados, eventos, midia, sistema
@@ -96,6 +97,29 @@ class _EstaticoSPA(StaticFiles):
     receber HTML onde espera JSON, além de mascarar erro de digitação no
     endpoint. Ali o 404 tem que continuar sendo 404.
     """
+
+    async def __call__(self, scope, receive, send) -> None:
+        """Recusa conexões WebSocket em vez de deixar o `StaticFiles` estourar.
+
+        Montado na raiz, este app recebe **tudo** que o router não casou — e um
+        WebSocket em caminho desconhecido chega aqui com `scope["type"] ==
+        "websocket"`. O `StaticFiles` do Starlette começa com
+        `assert scope["type"] == "http"`, então o resultado era um
+        `AssertionError` virando **500 com traceback no log**.
+
+        Encontrado ao digitar `/api/v1/ws/painel` em vez de `/api/v1/ws`: o
+        erro dizia "500 Internal Server Error", que manda procurar defeito no
+        servidor quando o problema é o caminho do cliente. Num painel que
+        reconecta com espera crescente (MVP-054), um caminho errado encheria o
+        journal de tracebacks idênticos.
+
+        `WebSocketClose` é o que o próprio router do Starlette usa para rota
+        WebSocket não encontrada; o cliente recebe uma recusa de handshake.
+        """
+        if scope["type"] != "http":
+            await WebSocketClose()(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
 
     async def get_response(self, path: str, scope):
         try:
