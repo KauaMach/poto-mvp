@@ -97,7 +97,7 @@
 | MVP-078 | Visualização no painel | F8b | P0 | 063, 075, 076 | Pendente |
 | MVP-079 | Custo de CPU e latência na Pi | F8b | P0 | 075, 076 | Pendente |
 | MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | ✅ Concluída |
-| MVP-066b | `make deploy` e build-id verificável | F9 | P0 | 066 | Pendente |
+| MVP-066b | `make deploy` e build-id verificável | F9 | P0 | 066 | ✅ Concluída |
 | MVP-067 | Unit systemd na Pi (API) | F9 | P0 | 066 | Pendente |
 | MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | Pendente |
 | MVP-067c | Kiosk no Galaxy Tab A11 | F9 | P0 | 055b, 067b | Pendente |
@@ -2507,8 +2507,9 @@
 
 ### MVP-066b — `make deploy` e build-id verificável
 - **Descrição:** Um comando só que constrói e envia, mais um jeito de confirmar qual build está no ar.
-- **Prioridade:** P0 · **Depende de:** 066 · **Status:** Pendente
-- **Arquivos:** `Makefile`, `frontend/dist/build-id`, `backend/app/api/sistema.py`
+- **Prioridade:** P0 · **Depende de:** 066 · **Status:** ✅ Concluída
+- **Arquivos:** `Makefile`, `frontend/scripts/gravar-build-id.mjs`,
+  `frontend/package.json`
 - **Critérios de aceitação:**
   - `make deploy` executa **build e rsync na mesma ação** — não existe enviar sem reconstruir
   - Exclui `.venv/`, `node_modules/`, `__pycache__/`, `*.db` do envio
@@ -2518,7 +2519,36 @@
     servindo com build-id novo. O lado da leitura já está pronto
     (`sistema.ARQUIVO_BUILD_ID`)
   - Comparar o build-id local com o do `/health` da Pi diz se o artefato está atualizado
-- **Como validar:** alterar uma string na tela, `make deploy`, e conferir que o build-id do `/health` da Pi mudou
+- **Como validar:** alterar uma string na tela, `make deploy`, e conferir que o build-id do
+  `/health` da Pi mudou — o `make build-id` faz a comparação. **Os quatro estados foram
+  testados** contra backends locais servindo `dist/` preparados:
+  Pi inalcançável · responde sem build-id · artefato antigo · mesmo artefato
+
+> **O build-id é hash do conteúdo do `dist/`, não a data nem o commit.** A diferença
+> importa: data mudaria a cada build mesmo sem alteração nenhuma, e um identificador que
+> sempre muda não distingue nada; o hash do commit não veria alterações **não commitadas**,
+> que é exatamente o estado de quem está testando algo na Pi. Verificado determinístico
+> (mesmo `dist/` → mesmo id) e sensível (um byte muda o id).
+>
+> O **nome** do arquivo entra no hash junto com o conteúdo. Sem ele, renomear sem mudar
+> bytes daria o mesmo id — e o Vite nomeia os bundles por hash de conteúdo, então o nome
+> carrega informação.
+>
+> **O `make build-id` distingue quatro estados, e não três.** A primeira versão dizia
+> "artefatos DIFERENTES, rode make deploy" quando a Pi simplesmente **não respondia** — um
+> diagnóstico que manda procurar no lugar errado, que é o defeito que este projeto vem
+> corrigindo desde o `/health`. Agora: sem resposta diz que é falta de alcance e sugere
+> rede e `systemctl`; responder sem build-id diz que o artefato chegou por outro caminho,
+> sem passar pelo deploy.
+>
+> **`deploy: build`** — a dependência é o ponto inteiro da task: não existe enviar sem
+> reconstruir. Verificado por dry-run: 172 itens, **2,3 MB**, nenhum item excluído
+> escapando (`node_modules`, `.venv`, `__pycache__`, `*.pyc`, `*.db`, `.env`, `.git`), e o
+> `dist/build-id` viajando junto com o artefato.
+>
+> `.env` fica de fora de propósito: ele tem os contatos institucionais e o token do painel,
+> e cada ambiente tem o seu. Sobrescrever o da Pi com o da máquina de desenvolvimento
+> apontaria a produção para os números de teste.
 - **Por que existe:** é a mitigação do único risco real de separar build e execução — **artefato velho**.
   Alterar o código, esquecer de reconstruir e enviar a versão antiga é um bug silencioso que
   custa uma hora de depuração. Amarrando build e envio num comando, não dá para esquecer.

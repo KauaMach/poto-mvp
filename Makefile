@@ -22,7 +22,7 @@ define exige
 	}
 endef
 
-.PHONY: help setup dev backend serve frontend build test lint train-clf seed demo-reset clean
+.PHONY: help setup dev backend serve frontend build deploy build-id test lint train-clf seed demo-reset clean
 
 help: ## Lista os alvos disponíveis
 	@echo ""
@@ -84,6 +84,70 @@ build: ## Build de produção do frontend (o backend passa a servir tudo)
 	@echo "  dist/ pronto — o backend serve a aplicação e a API na mesma origem."
 	@echo "  Suba com 'make serve' e abra http://$$(hostname -I 2>/dev/null | awk '{print $$1}'):$(BACKEND_PORT)"
 	@echo ""
+
+# --- Deploy para a Pi -------------------------------------------------------
+#
+# A Pi **não compila** o frontend. O toolchain do Vite 8 é Rust compilado por
+# arquitetura, então construir lá usaria binários aarch64 diferentes dos
+# testados aqui — mesma fonte, ferramentas distintas (ARCHITECTURE.md D1c).
+# Construindo num lugar só, o artefato que roda é literalmente o que foi
+# testado.
+PI_HOST ?= raspoto@poto.local
+PI_DIR  ?= ~/poto-mvp
+# Só o nome do host, para o `curl` do `build-id` (o rsync precisa do usuário).
+PI_NAME ?= $(lastword $(subst @, ,$(PI_HOST)))
+
+# `build` e `rsync` no mesmo alvo, e é o ponto inteiro desta task: não existe
+# enviar sem reconstruir. Alterar o código, esquecer o build e enviar a versão
+# antiga é um bug silencioso que custa uma hora de depuração.
+deploy: build ## Constrói e envia para a Pi (PI_HOST=usuario@host)
+	@echo ""
+	@echo "  build-id local: $$(cat $(FRONTEND)/dist/build-id)"
+	@echo "  destino:        $(PI_HOST):$(PI_DIR)"
+	@echo ""
+	rsync -az --delete 		--exclude '.git/' 		--exclude '.venv/' 		--exclude 'node_modules/' 		--exclude '__pycache__/' 		--exclude '*.pyc' 		--exclude '.pytest_cache/' 		--exclude '.ruff_cache/' 		--exclude '*.db' --exclude '*.db-wal' --exclude '*.db-shm' 		--exclude '.env' 		./ $(PI_HOST):$(PI_DIR)/
+	@echo ""
+	@echo "  enviado. Conferir se a Pi está servindo este build:"
+	@echo "    make build-id"
+	@echo ""
+
+# O único jeito de saber que a Pi está servindo o que acabou de ser enviado.
+# Sem isto, "alterei e não mudou nada" manda a depuração para o lugar errado.
+build-id: ## Compara o build-id local com o que a Pi está servindo
+	$(call exige,$(FRONTEND)/dist/build-id,MVP-066b)
+	@local=$$(cat $(FRONTEND)/dist/build-id); \
+	saude=$$(curl -sf --max-time 5 http://$(PI_NAME):$(BACKEND_PORT)/api/v1/health 2>/dev/null); \
+	echo ""; \
+	echo "  local: $$local"; \
+	if [ -z "$$saude" ]; then \
+		echo "  na Pi: —"; \
+		echo ""; \
+		echo "  ✗ a Pi não respondeu em http://$(PI_NAME):$(BACKEND_PORT)."; \
+		echo "    Isto é falta de alcance, não artefato velho: confira a rede,"; \
+		echo "    o 'systemctl status poto-api' e o nome $(PI_NAME)."; \
+		echo ""; \
+		exit 1; \
+	fi; \
+	remoto=$$(echo "$$saude" | python3 -c 'import sys,json; print(json.load(sys.stdin)["frontend"]["build_id"] or "")'); \
+	if [ -z "$$remoto" ]; then \
+		echo "  na Pi: (sem build-id)"; \
+		echo ""; \
+		echo "  ✗ a Pi responde, mas o dist/ dela não tem build-id — chegou lá"; \
+		echo "    por outro caminho, sem passar pelo 'make deploy'."; \
+		echo ""; \
+		exit 1; \
+	fi; \
+	echo "  na Pi: $$remoto"; \
+	echo ""; \
+	if [ "$$local" = "$$remoto" ]; then \
+		echo "  ✓ a Pi está servindo este build"; \
+		echo ""; \
+	else \
+		echo "  ✗ artefatos DIFERENTES — a Pi tem uma versão antiga."; \
+		echo "    Rode 'make deploy'."; \
+		echo ""; \
+		exit 1; \
+	fi
 
 test: ## Roda a suíte de testes do backend
 	cd $(BACKEND) && uv run pytest
