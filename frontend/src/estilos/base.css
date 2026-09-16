@@ -1,0 +1,135 @@
+/* Reset e regras de base — MVP-042
+ *
+ * Fica depois de `tokens.css` na ordem de importação: tudo aqui consome os
+ * tokens, nada os define.
+ */
+
+@import "./fontes.css";
+@import "./tokens.css";
+
+/* `border-box` em tudo: com `content-box`, `min-height: 168px` no `.choice`
+ * (MVP-045) mediria só o conteúdo e o cartão sairia 56px maior que a
+ * especificação. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* O tablet de parede não rola: cada tela cabe inteira. Permitir o "arraste
+   * elástico" do iOS faria o conteúdo saltar ao toque, o que numa tela de
+   * socorro parece defeito. */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.5;
+  /* O totem é operado com o dedo e nenhuma tela dele tem texto para
+   * selecionar. Sem isto, um toque mantido abre o menu de seleção do
+   * navegador sobre o botão. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+/* Michroma só tem peso 400. Declarar 700 faria o navegador **sintetizar** um
+ * negrito — engrossando os traços por algoritmo — e o resultado é sujo. A
+ * hierarquia vem de tamanho, tracking e caixa-alta. */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  /* Impede o navegador de interpretar toque-e-arraste como gesto de rolagem
+   * ou duplo-toque-para-zoom. No `<Panic>` (MVP-046), que exige pressão
+   * contínua de 1 s, sem isto o gesto seria cancelado pelo navegador no meio. */
+  touch-action: manipulation;
+}
+
+/* --- Foco -----------------------------------------------------------------
+ *
+ * `:focus-visible` e não `:focus`: o anel aparece para quem navega por teclado
+ * e não a cada toque na tela. 3px de ferrugem porque o critério de
+ * acessibilidade do projeto pede foco **visível**, e 1px sobre papel claro não
+ * é.
+ */
+:focus-visible {
+  outline: 3px solid var(--rust);
+  outline-offset: 2px;
+}
+
+/* Mantém a área clicável de qualquer controle acima do mínimo, mesmo que o
+ * componente esqueça de declarar. O tablet é de parede, operado de pé, às
+ * vezes por quem está com a mão tremendo. */
+button,
+[role="button"],
+a {
+  min-height: var(--touch);
+  min-width: var(--touch);
+}
+
+/* Números de protocolo e cronômetros em largura fixa: sem isto o
+ * `CALL-2026-000001` muda de largura a cada dígito e o cronômetro de alerta
+ * ativo "pula" a cada segundo. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Movimento reduzido ---------------------------------------------------
+ *
+ * Não é só preferência estética: movimento pode desencadear náusea e enxaqueca
+ * em quem tem desordem vestibular. Num totem de emergência, a pessoa já pode
+ * estar em sofrimento.
+ *
+ * `0.01ms` e não `0`: com duração zero alguns navegadores não disparam
+ * `transitionend`/`animationend`, e código que espera o evento travaria. O
+ * `<Panic>` (MVP-046) depende disso — ele troca a animação contínua do anel por
+ * degraus discretos em vez de simplesmente desligá-la, porque o usuário precisa
+ * continuar vendo que a pressão está sendo registrada.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

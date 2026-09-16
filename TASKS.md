@@ -64,7 +64,7 @@
 | MVP-039 | Testes de contrato da API | F4 | P0 | 030–038 | ✅ Concluída |
 | MVP-040 | Autenticação por token no painel | F4 | P1 | 032 | ✅ Concluída |
 | MVP-041 | Fontes auto-hospedadas | F5 | P0 | 003 | ✅ Concluída |
-| MVP-042 | `tokens.css` e `base.css` | F5 | P0 | 003 | Pendente |
+| MVP-042 | `tokens.css` e `base.css` | F5 | P0 | 003 | ✅ Concluída |
 | MVP-043 | Componente `<Sym>` (ícones) | F5 | P0 | 041, 042 | Pendente |
 | MVP-044 | Componentes `<Wordmark>` e `<StatusPill>` | F5 | P0 | 042, 043 | Pendente |
 | MVP-045 | Componente `<Choice>` | F5 | P0 | 042, 043 | Pendente |
@@ -1292,14 +1292,48 @@
 
 ### MVP-042 — `tokens.css` e `base.css`
 - **Descrição:** Portar literalmente os tokens do POTO (PLAN.md §6).
-- **Prioridade:** P0 · **Depende de:** 003 · **Status:** Pendente
-- **Arquivos:** `frontend/src/estilos/tokens.css`, `base.css`
+- **Prioridade:** P0 · **Depende de:** 003 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/estilos/tokens.css`, `base.css`,
+  `frontend/scripts/verificar-tokens.mjs`, `frontend/package.json`
 - **Critérios de aceitação:**
   - Todos os tokens de cor, raio, espaço, tipografia, sombra e `--touch: 64px`
   - Valores hex **idênticos** aos de PLAN.md §6
   - `base.css` define reset, `body` com `--paper`, foco `outline: 3px var(--rust)`
   - `@media (prefers-reduced-motion: reduce)` desliga animações
-- **Como validar:** comparar `tokens.css` com PLAN.md §6, valor a valor
+- **Como validar:** `npm run check-tokens` — **32 valores conferem**, automatizado
+
+> **A comparação virou script, não conferência manual.** Fazer isso à mão uma vez não
+> protege nada: o risco real é a **deriva** — alguém ajustando um hex meses depois e a
+> interface deixando de ser a identidade aprovada sem que ninguém note. O script lê o
+> PLAN.md §6 como fonte da verdade em vez de copiar os valores para dentro de si (uma
+> cópia teria exatamente o problema que ela existiria para resolver) e roda junto do
+> `npm run lint`. Verificado que pega deriva de verdade: trocar `--rust` por `#d0402b`
+> reprova.
+>
+> A comparação é **semântica, não textual**: `rgba(20,15,5,.05)` e
+> `rgba(20, 15, 5, 0.05)` são a mesma cor, e travar nessa diferença faria o script cobrar
+> a formatação do documento em vez da identidade visual. A normalização é pequena de
+> propósito — espaço, caixa e zero à esquerda de decimal, nada além.
+>
+> Sem dependência nova: o projeto não tem nem planeja runner de teste no frontend, e
+> acrescentar um por causa de 30 linhas seria desproporcional.
+>
+> Decisões do `base.css` que o critério não lista mas a interface exige:
+>
+> - `touch-action: manipulation` em botões. Sem isso o navegador interpreta
+>   toque-e-arraste como rolagem e **cancelaria a pressão de 1 s do `<Panic>`** (MVP-046)
+>   no meio do gesto.
+> - `user-select: none` no `body`: nenhuma tela do totem tem texto para selecionar, e um
+>   toque mantido abriria o menu de seleção sobre o botão.
+> - `min-height/min-width: var(--touch)` em todo controle, para que um componente que
+>   esqueça de declarar ainda respeite o mínimo.
+> - `.tabular` para protocolo e cronômetro: sem largura fixa de dígito o
+>   `CALL-2026-000001` muda de largura a cada número e o cronômetro "pula".
+>
+> **`prefers-reduced-motion` usa `0.01ms`, não `0`.** Com duração zero alguns navegadores
+> não disparam `transitionend`/`animationend`, e código que espera o evento travaria. Não
+> é preferência estética: movimento pode desencadear náusea e enxaqueca em quem tem
+> desordem vestibular, e num totem de emergência a pessoa já pode estar em sofrimento.
 
 ### MVP-043 — Componente `<Sym>` (ícones)
 - **Descrição:** Wrapper de Material Symbols Rounded com os tamanhos do POTO.
