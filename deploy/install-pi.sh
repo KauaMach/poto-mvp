@@ -94,11 +94,31 @@ ok "uv $(uv --version 2>/dev/null | awk '{print $2}')"
 titulo "Ambiente Python"
 
 cd "$RAIZ/backend"
+
+# **Não basta o venv existir: ele precisa ter sido criado com a flag.**
+#
+# Um venv anterior, feito sem `--system-site-packages`, fica invisível para o
+# `picamera2` do apt — e o sintoma é `ModoNotFoundError: No module named
+# 'picamera2'` só quando alguém tenta abrir a câmera, muito depois da
+# instalação. Encontrado na Pi real: o venv existia desde uma fase anterior do
+# projeto e o `uv sync --extra midia` instalava o `sounddevice` com sucesso,
+# dando a impressão de que a mídia estava pronta.
+#
+# `pyvenv.cfg` grava a flag, então a checagem é direta.
+RECRIAR=0
 if [[ ! -d .venv ]]; then
+  RECRIAR=1
+elif ! grep -qi "^include-system-site-packages\s*=\s*true" .venv/pyvenv.cfg 2>/dev/null; then
+  aviso "venv existe SEM --system-site-packages — o picamera2 do apt ficaria invisível"
+  rm -rf .venv
+  RECRIAR=1
+fi
+
+if (( RECRIAR )); then
   uv venv --system-site-packages --python /usr/bin/python3
   ok "venv criado com --system-site-packages"
 else
-  ok "venv já existe"
+  ok "venv já correto (--system-site-packages)"
 fi
 
 # Idempotente e rápido: 7,7 s medidos em aarch64 no smoke test de 16/09, com
@@ -152,7 +172,6 @@ fi
 sudo sed -e "s|^User=.*|User=${USUARIO}|" \
          -e "s|^Group=.*|Group=${USUARIO}|" \
          -e "s|/home/raspoto/poto-mvp|${RAIZ}|g" \
-         -e "s|/home/raspoto/.local/bin/uv|$(command -v uv)|" \
          "$UNIT_ORIGEM" | sudo tee "$UNIT_DESTINO" >/dev/null
 sudo chmod 644 "$UNIT_DESTINO"
 ok "unit instalada (usuário ${USUARIO}, raiz ${RAIZ})"

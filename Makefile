@@ -57,9 +57,16 @@ backend: ## Sobe só a API, em modo de desenvolvimento (recarrega ao salvar)
 	$(call exige,$(BACKEND)/app/main.py,MVP-026)
 	cd $(BACKEND) && uv run uvicorn app.main:app --reload --port $(BACKEND_PORT) $(ENV_FLAG)
 
-# `serve` é o modo de produção, e existe para ser **o mesmo comando** que a unit
-# systemd da MVP-067 executa. Dois comandos diferentes divergiriam, e a
-# divergência apareceria só na Pi.
+# `serve` reproduz o modo de produção: os **mesmos argumentos de servidor** que a
+# unit systemd da MVP-067 usa, que são os que mudam o comportamento observável.
+#
+# O que difere é a invocação: aqui `uv run uvicorn`, na unit o binário do venv
+# direto (`.venv/bin/uvicorn`). Não é descuido — `uv run` sincroniza dependências
+# quando o `pyproject` muda, o que é o que se quer em desenvolvimento e o oposto
+# do que se quer num serviço: ele escreve em `~/.cache/uv`, que o sandbox da unit
+# torna somente-leitura, e põe resolução de dependências no caminho do boot. O
+# serviço falhou em laço na Pi por exatamente isso. Ver o comentário no ExecStart
+# de `deploy/poto-api.service`.
 #
 # Duas diferenças em relação a `backend`, e as duas importam:
 #

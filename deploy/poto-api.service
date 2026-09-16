@@ -47,14 +47,30 @@ WorkingDirectory=/home/raspoto/poto-mvp/backend
 # subir mesmo sem ele — degradado, e o `/health` diz o que falta (MVP-036).
 EnvironmentFile=-/home/raspoto/poto-mvp/backend/.env
 
-# O MESMO comando de `make serve`. Se divergirem, a divergência aparece só na
-# Pi — e é o tipo de diferença que custa uma hora para achar.
+# Chama o uvicorn **do venv**, direto — e não `uv run uvicorn`.
+#
+# Foi um bug real, encontrado na Pi: com `uv run`, o serviço falhava em laço com
+#
+#   Read-only file system (os error 30) at path "/home/raspoto/.cache/uv/..."
+#
+# porque o `ProtectHome=read-only` abaixo torna `/home` somente-leitura e o `uv`
+# precisa escrever no cache dele a cada invocação. A saída não é abrir o cache
+# no sandbox: é não precisar dele.
+#
+# `uv run` é a ferramenta certa em desenvolvimento — ele sincroniza as
+# dependências quando o `pyproject` muda. Num serviço isso é o oposto do
+# desejado: uma dependência resolvida no boot significa rede e cache no caminho
+# crítico, e latência antes de a API responder. O critério da MVP-070 é "API
+# respondendo em menos de 60 s após reboot".
+#
+# É a única diferença em relação a `make serve`; os argumentos do servidor são
+# os mesmos, e são eles que importam:
 #
 #   --host 0.0.0.0  o tablet precisa alcançar; sem isto escuta só em localhost
 #   sem --reload    o observador de arquivos gasta CPU vigiando uma árvore que
 #                   não muda, e um toque acidental reiniciaria o serviço no
 #                   meio de um atendimento
-ExecStart=/home/raspoto/.local/bin/uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+ExecStart=/home/raspoto/poto-mvp/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # Sempre, não `on-failure`: um `systemctl stop` continua parando o serviço
 # (systemd distingue parada manual de saída do processo), mas qualquer outra
@@ -86,7 +102,8 @@ PrivateTmp=true
 ProtectSystem=full
 ProtectHome=read-only
 # `ReadWritePaths` reabre só o que precisa: o banco SQLite (com WAL, são três
-# arquivos) fica no diretório do backend.
+# arquivos) fica no diretório do backend. O `dist/` do frontend e o artefato do
+# classificador são lidos, nunca escritos.
 ReadWritePaths=/home/raspoto/poto-mvp/backend
 
 [Install]
