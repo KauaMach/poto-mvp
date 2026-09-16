@@ -52,7 +52,7 @@
 | MVP-027 | Hub de WebSocket | F4 | P0 | 026 | ✅ Concluída |
 | MVP-028 | Registry de canais + provider `log` | F4 | P0 | 011 | ✅ Concluída |
 | MVP-029 | Provider `webhook` | F4 | P0 | 028 | ✅ Concluída |
-| MVP-030 | `POST /eventos` | F4 | P0 | 024, 027, 028 | Pendente |
+| MVP-030 | `POST /eventos` | F4 | P0 | 024, 027, 028 | ✅ Concluída |
 | MVP-031 | `POST /panico` | F4 | P0 | 030 | Pendente |
 | MVP-032 | `GET /chamados` e `GET /chamados/{id}` | F4 | P0 | 016 | Pendente |
 | MVP-033 | `POST /chamados/{id}/ack` e `PATCH` | F4 | P0 | 016, 027 | Pendente |
@@ -796,15 +796,53 @@
 
 ### MVP-030 — `POST /eventos`
 - **Descrição:** O endpoint principal: triagem, merge protetivo, roteamento, persistência, broadcast e notificação.
-- **Prioridade:** P0 · **Depende de:** 024, 027, 028 · **Status:** Pendente
-- **Arquivos:** `backend/app/api/eventos.py`
+- **Prioridade:** P0 · **Depende de:** 024, 027, 028 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/api/eventos.py`, `backend/app/main.py`,
+  `backend/tests/test_api_eventos.py`
 - **Critérios de aceitação:**
   - Ordem: `triar()` → `rotear()` → `merge_acionamento()` → `criar_chamado()` → `broadcast` → `notificar`
   - **Usa `merge_acionamento()`; jamais sobrescreve a gravidade do roteador**
   - `evento_id` repetido → `201` com `duplicado=True`, sem notificar de novo
   - Falha de notificação → status `falha_notificacao`, mas o chamado **existe**
   - Responde em < 2 s
-- **Como validar:** `uv run pytest tests/test_api_eventos.py`
+- **Como validar:** `uv run pytest tests/test_api_eventos.py` — 57 testes
+
+> **"Responde em < 2 s" e "→ notificar" entram em conflito.** O webhook tem teto de 10 s
+> (MVP-029). Aguardá-lo deixaria a tela do totem parada enquanto alguém está em perigo —
+> e o chamado já está salvo e a central já foi avisada nesse ponto. Então a notificação
+> vai em `BackgroundTasks`: continua na ordem, mas depois da resposta. O resultado chega
+> ao painel por WebSocket (`atualizado`), que é quem precisa dele.
+>
+> Consequência assumida: o `status` da resposta é o de antes da notificação (`roteado`).
+> A tela do totem não depende dele — o protocolo já é definitivo.
+>
+> **O tipo e o modo gravados são os decididos, não os pedidos.** A trilha `mulher` chega
+> como `normal` e é gravada como `discreto`; um texto com sinal crítico de saúde numa
+> trilha de segurança é gravado como `saude`. É o que o painel mostra e quem responde
+> precisa ver. A intenção original não se perde: `trilha_escolhida` entra no
+> `triagem_json`, que é o registro de auditoria do merge — sem ele, "por que este chamado
+> foi para o SAMU?" não teria resposta meses depois.
+>
+> **Assimetria deliberada de payload.** A notificação externa nunca leva o relato
+> (MVP-028); o broadcast para o painel leva. Quem atende precisa dele para decidir como
+> responder, e o painel está dentro da fronteira de confiança — o grupo de WhatsApp não
+> está. Isto torna a autenticação do `WS /ws` (MVP-035) obrigatória, não opcional:
+> **a MVP-040 não pode ser cortada sem que o `/ws` fique aberto com o relato.**
+>
+> Reenvio não tem efeito colateral nenhum: não notifica, não avisa a central de novo. Um
+> reenvio é a mesma emergência, e reanunciá-la faria o operador achar que há dois
+> chamados. A instrução de tela é recalculada — ela é apresentação, não domínio, e o
+> roteador é determinístico.
+>
+> **Uma das nove mutações sobreviveu, e era defeito do teste.** Aguardar a notificação em
+> vez de agendá-la passava os 56 testes, inclusive o que eu acreditava provar o "< 2 s"
+> pela divergência entre o `status` da resposta e o do banco. Mas ao aguardar, o
+> dicionário em mão continua o de `criar_chamado`, ainda em `roteado` — a divergência
+> acontece nos dois desenhos. A prova real é observar **quando o corpo sai pelo ASGI**:
+> o teste chama a aplicação crua, sem `TestClient`, e cobra a ordem
+> `["resposta enviada", "notificar"]`. Corrigido, as 9 mutações são pegas — inclusive a
+> reintrodução do defeito original (gravidade do texto sobrescrevendo a do roteador), que
+> derruba 5 testes.
 
 ### MVP-031 — `POST /panico`
 - **Descrição:** Broadcast paralelo para os canais internos, com status persistente.
