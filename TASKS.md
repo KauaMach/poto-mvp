@@ -90,7 +90,7 @@
 | MVP-064 | Contador de SLA ao vivo | F8 | P0 | 037, 061 | ✅ Concluída |
 | MVP-065 | Filtros e busca | F8 | P1 | 060 | ✅ Concluída |
 | MVP-073 | Detecção de dispositivos + `GET /dispositivos` | F8b | P0 | 026 | ✅ Concluída |
-| MVP-074 | Captura de vídeo (picamera2 / V4L2) | F8b | P0 | 073 | Pendente |
+| MVP-074 | Captura de vídeo (picamera2 / V4L2) | F8b | P0 | 073 | ✅ Concluída |
 | MVP-077 | **Sessão de mídia com auditoria** | F8b | P0 | 073, 017 | Pendente |
 | MVP-075 | Stream MJPEG | F8b | P0 | 074, 077 | Pendente |
 | MVP-076 | Captura e stream de áudio (ALSA) | F8b | P0 | 073, 077 | Pendente |
@@ -2419,15 +2419,53 @@
 
 ### MVP-074 — Captura de vídeo
 - **Descrição:** Abstrair as duas origens possíveis de câmera atrás de uma interface só.
-- **Prioridade:** P0 · **Depende de:** 073 · **Status:** Pendente
-- **Arquivos:** `backend/app/midia/camera.py`
+- **Prioridade:** P0 · **Depende de:** 073 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/midia/camera.py`, `backend/tests/test_camera.py`
 - **Critérios de aceitação:**
   - Interface única `abrir(id) -> gerador de frames JPEG`
   - `CameraCSI` com `picamera2` (JPEG direto do ISP) e `CameraUSB` com V4L2
   - Resolução e FPS configuráveis (default **640×480 a 10 fps** — suficiente e barato)
   - Liberar a câmera ao encerrar; nunca deixar o dispositivo travado
   - Duas sessões simultâneas no mesmo dispositivo **compartilham** um único capturador
-- **Como validar:** `uv run pytest tests/test_camera.py` com captura falsa; na Pi, capturar 10 frames
+- **Como validar:** `uv run pytest tests/test_camera.py` — 13 testes com captura falsa; e
+  **na Pi real**: 10 frames JPEG válidos (`FFD8`…`FFD9`) da `imx219`, ~10 KB cada,
+  compartilhamento de capturador e reabertura após liberar
+
+> **Duas coisas que eu havia escrito errado, corrigidas pela medição na Pi.**
+>
+> 1. O comentário afirmava que *"o JPEG sai do ISP, não de uma codificação em software"*.
+>    **Falso** — `capture_array` devolve RGB888 e o PIL comprime. Mas a medição mostrou que
+>    não importa: **31,8 fps** com o encode contra **30,0 fps** sem ele, ou seja o custo da
+>    compressão desaparece no ruído. O gargalo é a captura (~33 ms/frame). A conclusão
+>    estava certa pelo motivo errado, e o comentário agora diz o mecanismo real.
+> 2. Li "8,6 fps" na primeira captura e quase tratei como limite. Era o **warm-up de
+>    0,5 s** contado junto — o gerador pacing a 10 fps entrega 10 frames em ~1,1 s, e é o
+>    que ele fez.
+>
+> **640×480 a 10 fps é escolha, não limite.** A captura sustenta 31,8 fps; desacelerar para
+> 10 usa três vezes menos CPU e 10 fps já mostra o que acontece num corredor. É a folga que
+> a MVP-079 vai medir.
+>
+> **Um capturador por dispositivo, compartilhado, liberado quando o ÚLTIMO sai.** A câmera é
+> hardware exclusivo — a segunda abertura falharia com "device busy". Verificado na Pi: duas
+> sessões, um capturador; fechar a primeira mantém a imagem para a segunda; fechar a segunda
+> libera; e **reabrir depois funciona**, o que prova que o fechamento foi limpo. Sem isso o
+> sintoma seria "a câmera parou de funcionar" algumas sessões depois, exigindo reiniciar o
+> serviço só para diagnosticar.
+>
+> Há teste para o gerador **abandonado** sem `close()` — o caso comum quando o painel fecha
+> a aba: o coletor de lixo fecha o gerador e o `finally` libera a câmera.
+>
+> O caminho USB está implementado e **não exercitado em hardware**: a Pi deste projeto não
+> tem câmera USB (MVP-073). Ele usa `ffmpeg` por pipe e não OpenCV — o segundo traria ~80 MB
+> para fazer o que um pipe resolve. A leitura procura os marcadores `FFD8`/`FFD9` porque
+> MJPEG por pipe não delimita frames; devolver "um chunk" entregaria meio frame e o
+> navegador mostraria a imagem cortada.
+>
+> **Dois defeitos nos meus próprios testes**, pegos ao rodar: patchear `app.midia.obter`
+> não afeta `camera.py`, que faz `from . import obter` e guarda a referência — o teste
+> passou a "não levantar", o oposto do que verifica; e a fixture acelerava o `FPS` para o
+> teste não esperar, fazendo o teste de constantes afirmar sobre o valor **falso**.
 
 ### MVP-075 — Stream MJPEG
 - **Descrição:** Entregar o vídeo ao painel sem WebRTC nem biblioteca.
