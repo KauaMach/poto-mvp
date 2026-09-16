@@ -82,7 +82,7 @@
 | MVP-056 | Acessibilidade AA | F6 | P1 | 055 | ⚠️ Parcial |
 | MVP-057 | Fila offline em `localStorage` | F7 | P0 | 048 | ✅ Concluída |
 | MVP-058 | Dreno automático e badge de fila | F7 | P0 | 057 | ✅ Concluída |
-| MVP-059 | Re-triagem protetiva no dreno | F7 | P0 | 023, 058 | Pendente |
+| MVP-059 | Re-triagem protetiva no dreno | F7 | P0 | 023, 058 | ✅ Concluída |
 | MVP-060 | Shell e lista do painel | F8 | P0 | 032, 042 | Pendente |
 | MVP-061 | Card de chamado com gravidade | F8 | P0 | 060 | Pendente |
 | MVP-062 | WebSocket em tempo real no painel | F8 | P0 | 035, 060 | Pendente |
@@ -2079,13 +2079,39 @@
 
 ### MVP-059 — Re-triagem protetiva no dreno
 - **Descrição:** Fechar a versão offline do defeito de rebaixamento. No projeto antigo, conversa sem rede virava sempre `ouvidoria`.
-- **Prioridade:** P0 · **Depende de:** 023, 058 · **Status:** Pendente
-- **Arquivos:** `backend/app/api/eventos.py`
+- **Prioridade:** P0 · **Depende de:** 023, 058 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/tests/test_api_dreno.py`
 - **Critérios de aceitação:**
   - Evento drenado com `texto_livre` passa por `merge_acionamento()` na chegada
   - Evento enfileirado como `ouvidoria` com texto grave é **promovido**
   - Idempotência preservada: re-envio do mesmo `evento_id` não duplica
-- **Como validar:** enfileirar `{tipo: ouvidoria, texto: "socorro tem um homem me seguindo"}`, drenar, e verificar promoção
+- **Como validar:** enfileirar `{tipo: ouvidoria, texto: "socorro tem um homem me
+  seguindo"}`, drenar, e verificar promoção — **verificado**, promove para
+  `risco_imediato` e retipa como `mulher`. 19 testes
+
+> **Os três critérios já eram satisfeitos, e isso foi verificado antes de escrever
+> qualquer código.** `/eventos` chama `merge_acionamento()` desde a MVP-030, e o merge
+> promove por sinal crítico independentemente da trilha — não havia caminho novo a criar.
+> O entregável desta task é, portanto, **o teste**, não a implementação.
+>
+> Vale um arquivo próprio porque a regressão que ele guarda é diferente. Um evento drenado
+> tem três propriedades que um evento ao vivo não tem, e cada uma já quebrou algum sistema:
+> chega horas depois, chega possivelmente mais de uma vez (o dreno pode falhar no meio), e
+> carrega um `timestamp_local` muito anterior ao `created_at`.
+>
+> O risco concreto é alguém otimizando o `/eventos` no futuro e achando seguro pular a
+> triagem "quando o evento é antigo", ou confiar no `timestamp_local` para rotear.
+> Verificado por mutação que os testes pegam exatamente isso: o atalho
+> *"evento antigo não precisa de triagem"* derruba 5 testes, e remover o merge derruba 8.
+> Um evento velho **não** é menos grave — é mais, porque ninguém apareceu nesse tempo.
+>
+> **Lacuna documentada por teste, não escondida:** o backend não distingue um evento
+> drenado de um ao vivo. O payload é byte a byte o mesmo — é isso que preserva a
+> idempotência — então `origem_acionamento` vem `touch` nos dois casos. Não é falha de
+> segurança (responder a uma emergência de sete horas atrás continua sendo a ação certa,
+> porque ninguém sabe se a pessoa está bem); é falta de **contexto** para o operador. O
+> sinal existe e é indireto: `created_at − timestamp_local`. `test_backend_nao_distingue_
+> evento_drenado_de_ao_vivo` registra a lacuna para quem construir o painel na Fase 8.
 
 ---
 
