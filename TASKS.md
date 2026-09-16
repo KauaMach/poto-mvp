@@ -46,7 +46,7 @@
 | MVP-021 | Script de treino e avaliação | F3 | P0 | 020 | ✅ Concluída |
 | MVP-022 | Heurística de palavras-chave | F3 | P0 | 009 | ✅ Concluída |
 | MVP-023 | **Merge protetivo** ★ | F3 | P0 | 012, 020, 022 | ✅ Concluída |
-| MVP-024 | Fachada `triar()` | F3 | P0 | 023 | Pendente |
+| MVP-024 | Fachada `triar()` | F3 | P0 | 023 | ✅ Concluída |
 | MVP-025 | Suíte de regressão de segurança | F3 | P0 | 024 | Pendente |
 | MVP-026 | App FastAPI + lifespan + estático | F4 | P0 | 004, 014 | Pendente |
 | MVP-027 | Hub de WebSocket | F4 | P0 | 026 | Pendente |
@@ -589,14 +589,26 @@
 
 ### MVP-024 — Fachada `triar()`
 - **Descrição:** Porta única da triagem. O resto do sistema nunca sabe qual motor rodou.
-- **Prioridade:** P0 · **Depende de:** 023 · **Status:** Pendente
-- **Arquivos:** `backend/app/triagem/__init__.py`
+- **Prioridade:** P0 · **Depende de:** 023 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/triagem/__init__.py`, `backend/tests/test_triagem.py`
 - **Critérios de aceitação:**
   - `triar(texto, modo) -> dict` com `tipo`, `gravidade`, `confianca`, `canal_sugerido`, `fonte`
   - Precedência: classificador → heurística
   - `fonte` diz a **verdade**: `"classificador"` ou `"heuristica"` — nunca um motor que não rodou
   - Texto vazio ou `None` não quebra: devolve resultado neutro
-- **Como validar:** `uv run pytest tests/test_triagem.py`
+- **Como validar:** `uv run pytest tests/test_triagem.py` — 44 testes
+
+> **Detalhe que quase passou despercebido:** o classificador **não** produz
+> `sinal_critico` — quem calcula é a heurística. Sem a fachada garantir esse campo, um
+> resultado do classificador chegaria ao merge sem a rede de evidência literal, e
+> "socorro" dependeria só do que o modelo achou. A fachada calcula sempre, qualquer que
+> seja o motor.
+>
+> **Teste que trava o essencial:** `test_canal_sugerido_e_o_mesmo_nos_dois_motores`
+> compara o desfecho com e sem o artefato treinado. Uma Pi que subiu sem `make setup`
+> precisa tratar emergência como emergência — o motor muda, o desfecho não.
+>
+> `fonte="vazio"` para texto ausente, em vez de nomear um motor que não rodou.
 
 ### MVP-025 — Suíte de regressão de segurança
 - **Descrição:** Provar com frases reais que o sistema nunca rebaixa a proteção. Cada caso aqui é um defeito reproduzido no projeto antigo.
