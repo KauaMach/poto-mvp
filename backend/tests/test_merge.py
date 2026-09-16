@@ -14,7 +14,7 @@ from datetime import datetime
 import pytest
 
 from app.config import FUSO_LOCAL
-from app.models import Gravidade, Modo, TipoOcorrencia
+from app.models import Gravidade, TipoOcorrencia
 from app.triagem import heuristica
 from app.triagem.merge import RANK_GRAVIDADE, mais_protetiva, merge_acionamento
 from app.triagem.roteador import rotear
