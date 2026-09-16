@@ -99,7 +99,7 @@
 | MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | ✅ Concluída |
 | MVP-066b | `make deploy` e build-id verificável | F9 | P0 | 066 | ✅ Concluída |
 | MVP-067 | Unit systemd na Pi (API) | F9 | P0 | 066 | ✅ Concluída |
-| MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | ⚠️ Parcial |
+| MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | ✅ Concluída |
 | MVP-067c | Kiosk no Galaxy Tab A11 | F9 | P0 | 055b, 067b | ✅ Concluída |
 | ~~MVP-068~~ | ~~Daemon do botão GPIO~~ | — | **P2** | — | Fora do MVP |
 | MVP-069 | `install-pi.sh` (sem Node) | F9 | P0 | 067b, 066b | ⚠️ Parcial |
@@ -2796,8 +2796,8 @@
 
 ### MVP-067b — Endereçamento estável da Pi
 - **Descrição:** O tablet abre uma URL fixa; ela não pode mudar a cada reboot.
-- **Prioridade:** P0 · **Depende de:** 067 · **Status:** ⚠️ Parcial — script escrito e
-  executado; **o teste do tablet exige a Pi**
+- **Prioridade:** P0 · **Depende de:** 067 · **Status:** ✅ Concluída — com uma
+  **limitação medida** (ver a nota sobre fronteira de sub-rede)
 - **Arquivos:** `deploy/install-pi.sh`
 - **Critérios de aceitação:**
   - `avahi-daemon` instalado e ativo; `<hostname>.local` resolve — **ver a correção
@@ -2805,10 +2805,16 @@
   - IP estático documentado como plano B (reserva DHCP ou `dhcpcd.conf`)
   - O script imprime **as duas** URLs ao final
   - `curl http://poto.local:8000/api/v1/health` responde de outro dispositivo da rede
-- **Como validar:** do tablet, abrir `http://<hostname>.local:8000` — **não executado**
-  (Pi inalcançável deste ambiente). O script foi **rodado aqui** de ponta a ponta: detectou
-  o avahi ativo, resolveu o `.local`, leu IP, MAC e gateway reais, e a saída é **idêntica
-  em duas execuções seguidas** (idempotente)
+- **Como validar:** do tablet, abrir `http://<hostname>.local:8000` — **validado em
+  parte, em 16/09, e a parte que falta não é de implementação.** O que foi medido:
+  - na Pi: `avahi-daemon` **active**, `avahi-resolve -n RaspPoto.local` →
+    **`10.13.60.159`**, e o responder anuncia em `wlan0`
+  - o segmento da Pi **tem mDNS funcionando**: `avahi-browse -at` lista **26 anúncios**
+    de vizinhos (MacBooks, iMac, notebooks) — ou seja, o AP **não** isola multicast
+  - pelo IP, de outro aparelho: `http://10.13.60.159:8000/api/v1/health` → **200**
+  - o script roda de ponta a ponta e a saída é **idêntica em duas execuções seguidas**
+  - **não** foi possível fazer `curl http://RaspPoto.local:8000` de um segundo aparelho,
+    porque nenhum aparelho meu está no segmento da Pi — ver a nota abaixo
 
 > **Correção ao plano: o script não troca o hostname para `poto`.** A Pi deste projeto se
 > chama `RaspPoto`, e é assim que ela aparece em `docs/conexao-ssh.md` e na memória de quem
@@ -2817,10 +2823,34 @@
 > comando para trocar de propósito — junto do lembrete de atualizar o doc e o `PI_HOST` do
 > Makefile.
 >
-> **As duas URLs são impressas, e o critério insiste nisso por um bom motivo.** O mDNS
-> falha em dois casos reais: rede que bloqueia multicast — comum em wifi
-> corporativo/universitário, que é exatamente o caso da UFPI — e cliente sem suporte.
-> Imprimir só a `.local` deixaria a pessoa sem saída no momento em que ela falhasse.
+> **Correção ao que eu havia escrito aqui: na UFPI o multicast NÃO é bloqueado — o que
+> atrapalha é a fronteira de sub-rede.** Eu supunha bloqueio de multicast em wifi
+> universitário. A medição diz o contrário: no segmento da Pi o mDNS funciona e há 26
+> vizinhos anunciando. O que de fato impede é outra coisa, e é inerente ao protocolo:
+>
+> ```
+> Pi        10.13.60.159/22   →  segmento 10.13.60.0 – 10.13.63.255   (gw 10.13.63.250)
+> meu PC    10.13.47.164/22   →  segmento 10.13.44.0 – 10.13.47.255
+> rota      10.13.60.159 via 10.56.255.250   ← há roteador no caminho
+> ```
+>
+> mDNS é **link-local por desenho**: o grupo 224.0.0.251 vai com TTL 1 e não atravessa
+> roteador. As duas máquinas estão na mesma rede da universidade e em segmentos
+> diferentes, então `RaspPoto.local` não resolve daqui — e não resolveria de nenhum
+> aparelho fora do `/22` da Pi, por mais bem configurado que o avahi esteja.
+>
+> **Consequência operacional para a demo, que é o que importa:** o tablet precisa entrar
+> na **mesma rede da Pi** para o `.local` servir. Se ele cair em outro segmento do campus
+> — comum em rede com vários SSIDs ou VLANs — a URL por IP passa a ser a única que
+> funciona. Isso tem que ser conferido **no local**, com o tablet na mão, e não na véspera.
+>
+> **As duas URLs são impressas, e o critério insiste nisso por um bom motivo.** Some-se o
+> caso do cliente sem suporte a mDNS. Imprimir só a `.local` deixaria a pessoa sem saída
+> no momento em que ela falhasse.
+>
+> **E o IP da Pi hoje é DHCP** (`proto dhcp` na rota), o que soma com o acima: sem reserva
+> no roteador, o plano B também expira. É o motivo de o script montar o comando do `nmcli`
+> com MAC e gateway reais já preenchidos.
 >
 > O plano B é **IP estável**, não "o IP atual". Um IP por DHCP muda quando o roteador
 > reinicia, e aí o atalho do tablet aponta para nada. O script monta os dois caminhos com
