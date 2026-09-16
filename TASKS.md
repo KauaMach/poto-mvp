@@ -66,7 +66,7 @@
 | MVP-041 | Fontes auto-hospedadas | F5 | P0 | 003 | ✅ Concluída |
 | MVP-042 | `tokens.css` e `base.css` | F5 | P0 | 003 | ✅ Concluída |
 | MVP-043 | Componente `<Sym>` (ícones) | F5 | P0 | 041, 042 | ✅ Concluída |
-| MVP-044 | Componentes `<Wordmark>` e `<StatusPill>` | F5 | P0 | 042, 043 | Pendente |
+| MVP-044 | Componentes `<Wordmark>` e `<StatusPill>` | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-045 | Componente `<Choice>` | F5 | P0 | 042, 043 | Pendente |
 | MVP-046 | Componente `<Panic>` com pressionar-e-segurar | F5 | P0 | 042, 043 | Pendente |
 | MVP-047 | Componente `<Confirm>` | F5 | P0 | 042, 043 | Pendente |
@@ -1376,14 +1376,42 @@
 
 ### MVP-044 — `<Wordmark>` e `<StatusPill>`
 - **Descrição:** Marca e indicador de conectividade do header.
-- **Prioridade:** P0 · **Depende de:** 042, 043 · **Status:** Pendente
-- **Arquivos:** `frontend/src/componentes/{Wordmark,StatusPill}.tsx`
+- **Prioridade:** P0 · **Depende de:** 042, 043 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/componentes/{Wordmark,StatusPill}.tsx`,
+  `frontend/src/comum/useOnline.ts`
 - **Critérios de aceitação:**
   - Wordmark: Michroma 16px, `letter-spacing: .14em`, UPPERCASE, **pontos em `--rust`**
   - Clicar no wordmark volta à tela inicial
   - StatusPill: ponto 8px — verde `--ok` online, ferrugem `--rust` offline
   - Mostra `· N na fila` quando há eventos pendentes
-- **Como validar:** alternar online/offline no DevTools e observar a mudança
+- **Como validar:** alternar online/offline no DevTools e observar a mudança; markup
+  conferido por renderização no servidor (pontos em `--rust`, ponto 8px trocando
+  `--ok`/`--rust`, `· N na fila` com `.tabular`)
+
+> **Clicar no wordmark não é navegação, é saída de emergência de interface.** Num totem de
+> parede, alguém que entrou numa trilha por engano — ou que precisa que a tela pare de
+> mostrar o que está mostrando — toca a marca. É o gesto mais aprendido que existe na web,
+> e por isso vale mais que um botão "voltar" explícito.
+>
+> O texto é montado letra por letra porque os pontos precisam de cor própria; um
+> `aria-label` cobre o custo, sem o qual o leitor de tela soletraria quatro `span`
+> separados. A marca também anula o `min-height: var(--touch)` do `base.css` e cresce por
+> `padding`: o mínimo de 64px esticaria o header inteiro.
+>
+> **O que o `StatusPill` comunica não é "tem internet".** É *"o que você tocar chega agora
+> ou fica guardado"* — e é por isso que o contador `· N na fila` é a única informação
+> acionável ali. A tela inicial não é lugar para alarmar sobre rede quando o sistema
+> continua funcionando offline.
+>
+> `aria-live="polite"` e não `assertive`: interromper o leitor de tela no meio de uma
+> trilha de socorro para anunciar "offline" seria pior que esperar a pausa. E cor não é o
+> único sinal — o texto diz "Online"/"Offline" ao lado do ponto.
+>
+> **`navigator.onLine` responde a pergunta errada** e o `useOnline` documenta isso: ele
+> diz se a interface de rede está ativa, não se o backend responde. Num totem no wi-fi da
+> universidade com o roteador fora do ar, devolve `true`. Aceitável para o MVP porque o
+> sinal verdadeiro é o resultado do POST, tratado pela fila offline (MVP-057) — o
+> indicador é dica, e o contador de fila é o dado real.
 
 ### MVP-045 — Componente `<Choice>`
 - **Descrição:** O botão-cartão das trilhas — o elemento mais importante da interface.
