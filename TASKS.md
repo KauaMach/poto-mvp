@@ -36,7 +36,7 @@
 | MVP-011 | Catálogo de canais e config de SLA | F2 | P0 | 004, 009 | ✅ Concluída |
 | MVP-012 | Roteador determinístico | F2 | P0 | 009, 011 | ✅ Concluída |
 | MVP-013 | Testes do roteador | F2 | P0 | 012 | ✅ Concluída |
-| MVP-014 | Schema SQLite + WAL + índices | F2 | P0 | 009 | Pendente |
+| MVP-014 | Schema SQLite + WAL + índices | F2 | P0 | 009 | ✅ Concluída |
 | MVP-015 | Criação de chamado com idempotência | F2 | P0 | 014 | Pendente |
 | MVP-016 | Consulta e atualização de chamados | F2 | P0 | 015 | Pendente |
 | MVP-017 | Máquina de estados (`estado_log`) | F2 | P0 | 015 | Pendente |
@@ -326,8 +326,8 @@
 
 ### MVP-014 — Schema SQLite + WAL + índices
 - **Descrição:** Criar o banco com as três tabelas, os PRAGMAs e os índices de ARCHITECTURE.md §5.
-- **Prioridade:** P0 · **Depende de:** 009 · **Status:** Pendente
-- **Arquivos:** `backend/app/db.py`
+- **Prioridade:** P0 · **Depende de:** 009 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/db.py`, `backend/tests/test_db_schema.py`
 - **Critérios de aceitação:**
   - `init_db()` é idempotente (`CREATE TABLE IF NOT EXISTS`)
   - Tabelas `chamados`, `estado_log`, `notificacoes` conforme o schema
@@ -335,6 +335,11 @@
   - Três índices criados
   - `evento_id` e `chamado_id` são `UNIQUE`
 - **Como validar:** `sqlite3 backend/poto.db "PRAGMA journal_mode; .schema"`
+
+> **Acrescentado durante a execução:** `PRAGMA busy_timeout = 5000`. O worker de SLA
+> (MVP-038) escreve em paralelo com as requisições da API; sem o timeout, uma colisão
+> vira `database is locked` imediatamente em vez de aguardar. WAL resolve
+> leitor-vs-escritor, não escritor-vs-escritor.
 
 ### MVP-015 — Criação de chamado com idempotência
 - **Descrição:** Inserir um chamado gerando o protocolo, tratando reenvio do mesmo `evento_id`.
