@@ -23,8 +23,8 @@
 
 | ID | Task | Fase | Prio | Depende de | Status |
 |---|---|---|---|---|---|
-| MVP-001 | Estrutura de diretórios do projeto | F1 | P0 | — | Pendente |
-| MVP-002 | Scaffold do backend (FastAPI + uv) | F1 | P0 | 001 | Pendente |
+| MVP-001 | Estrutura de diretórios do projeto | F1 | P0 | — | ✅ Concluída |
+| MVP-002 | Scaffold do backend (FastAPI + uv) | F1 | P0 | 001 | ✅ Concluída |
 | MVP-003 | Scaffold do frontend (React + Vite + TS) | F1 | P0 | 001 | Pendente |
 | MVP-004 | `.env.example` e carregamento de config | F1 | P0 | 002 | Pendente |
 | MVP-005 | `.gitignore` | F1 | P0 | 001 | Pendente |
@@ -112,7 +112,7 @@
 
 ### MVP-001 — Estrutura de diretórios do projeto
 - **Descrição:** Criar a árvore de pastas definida em ARCHITECTURE.md §3, com `backend/`, `frontend/`, `deploy/` e `backend/tests/`.
-- **Prioridade:** P0 · **Depende de:** — · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** — · **Status:** ✅ Concluída
 - **Arquivos:** raiz do repositório
 - **Critérios de aceitação:**
   - Existem `backend/app/{api,triagem,canais,midia,data}` e `backend/{scripts,tests}`
@@ -123,16 +123,32 @@
 
 ### MVP-002 — Scaffold do backend (FastAPI + uv)
 - **Descrição:** Inicializar o projeto Python com `uv`, declarando as dependências mínimas.
-- **Prioridade:** P0 · **Depende de:** 001 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 001 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/pyproject.toml`
 - **Critérios de aceitação:**
   - `dependencies` contém exatamente: `fastapi`, `uvicorn[standard]`, `pydantic`, `httpx`, `scikit-learn`, `joblib`
   - `scikit-learn` é dependência **obrigatória**, não extra — é o motor da triagem
   - Extra `dev`: `pytest`, `pytest-asyncio`, `ruff`
-  - Extra `midia`: `picamera2`, `sounddevice` — opcionais, só instalados na Pi; a API sobe sem eles
+  - Extra `midia`: **apenas `sounddevice`** — ver nota abaixo sobre o `picamera2`
   - `requires-python = ">=3.11"`
   - Nenhuma menção a langgraph, langchain, pyserial ou faster-whisper
 - **Como validar:** `cd backend && uv sync && uv run python -c "import fastapi, sklearn; print('ok')"`
+
+> **Correção aplicada durante a execução.** O critério original mandava declarar
+> `picamera2` no extra `midia`. Está errado: verificado na Pi, o `picamera2` vem do
+> **apt** (`python3-picamera2`), porque depende de `python3-libcamera` — um binding C++
+> compilado que **não existe no PyPI**. Declará-lo como dependência pip faria
+> `uv sync --extra midia` falhar na Pi.
+>
+> O caminho correto, que a MVP-069 (`install-pi.sh`) precisa seguir:
+> ```bash
+> sudo apt install -y python3-picamera2
+> uv venv --system-site-packages --python /usr/bin/python3
+> uv sync --extra midia
+> ```
+> O `--python /usr/bin/python3` é obrigatório: o `picamera2` do apt está instalado para o
+> Python do sistema (3.13 na Pi), então um Python baixado pelo uv não o enxergaria nem
+> com `--system-site-packages`.
 
 ### MVP-003 — Scaffold do frontend (React + Vite + TS)
 - **Descrição:** Inicializar a aplicação React com Vite e TypeScript, configurada para gerar build estático em `dist/`.

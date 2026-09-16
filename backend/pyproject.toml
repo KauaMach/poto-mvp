@@ -1,0 +1,55 @@
+[project]
+name = "poto-backend"
+version = "0.1.0"
+description = "P.O.T.O — Backend do Totem de Segurança (UFPI)"
+requires-python = ">=3.11"
+
+# Dependências obrigatórias. scikit-learn e joblib NÃO são opcionais:
+# o classificador de triagem é o motor real do sistema (83,3% tipo /
+# 85,7% gravidade em 3,3 ms). Sem ele a triagem cai na heurística de
+# palavras-chave, que erra casos críticos — ver ARCHITECTURE.md D3.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "httpx>=0.27",
+    "scikit-learn>=1.4",
+    "joblib>=1.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+# Captura de áudio na Pi. Só isto é instalável por pip.
+#
+# ATENÇÃO — picamera2 NÃO está aqui de propósito. Na Raspberry Pi ele vem
+# do apt (python3-picamera2), porque depende de python3-libcamera, que é um
+# binding C++ compilado e não existe no PyPI. Declarar picamera2 como
+# dependência pip faria este extra falhar na Pi.
+#
+# Na Pi, o venv precisa enxergar os pacotes do sistema:
+#     sudo apt install -y python3-picamera2
+#     uv venv --system-site-packages --python /usr/bin/python3
+#     uv sync --extra midia
+#
+# O --python /usr/bin/python3 é obrigatório: o picamera2 do apt está
+# instalado para o Python do sistema, então um Python baixado pelo uv não
+# o enxergaria mesmo com --system-site-packages.
+midia = [
+    "sounddevice>=0.4",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
