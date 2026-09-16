@@ -3003,8 +3003,8 @@
 ### MVP-070 — Teste de resiliência (Pi + tablet)
 - **Descrição:** Provar que o conjunto se recupera sozinho, incluindo a queda de rede que
   esta topologia introduz.
-- **Prioridade:** P0 · **Depende de:** 069 · **Status:** ⚠️ Parcial — roteiro escrito;
-  **1 dos 7 itens executado**, os outros exigem a Pi e o tablet
+- **Prioridade:** P0 · **Depende de:** 069 · **Status:** ⚠️ Parcial — **3 dos 7 itens
+  executados** com número real; os 4 que faltam exigem o **tablet em mãos**
 - **Arquivos:** `docs/aceite-mvp.md`
 - **Critérios de aceitação:**
   - `reboot` da Pi → API respondendo em **< 60 s**; o tablet **reconecta sozinho** sem toque
@@ -3038,9 +3038,29 @@
 > documento: usar `SIGTERM` em vez de `SIGKILL` deixaria o SQLite fechar ordenadamente, e o
 > teste passaria sem provar nada sobre corte de energia.
 >
-> Os outros seis itens estão marcados `⏳ pendente` com o espaço "medido" **vazio de
-> propósito**. Preencher é parte do aceite — *"reiniciou rápido"* não é um resultado, e o
-> documento diz isso.
+> **Mais dois itens executados em 16/09, com a Pi alcançável e sudo disponível.**
+>
+> **Item 1 — reboot:** API respondendo em **31 s**, contra o critério de 60 s. Contados do
+> disparo do `reboot`, então a medida inclui a Pi descer e subir, e feita de outra máquina
+> pela rede — a posição do tablet. A linha "tablet reconecta sem toque" segue pendente de
+> propósito: o mecanismo tem teste (MVP-054, MVP-058), mas isso só se comprova olhando o
+> aparelho.
+>
+> **Item 2 — `kill -9`:** serviço de pé de novo em **4,8 s**, contra o critério de 10 s,
+> com PID novo e `NRestarts` em 1.
+>
+> E duas verificações que **não estavam no roteiro** e valem mais que o tempo de subida:
+> depois do `kill -9`, o `POST /eventos` devolveu **201 em 135 ms**, e o reenvio do mesmo
+> `evento_id` devolveu o **mesmo** `CALL-2026-000003` com `duplicado: true`. Um serviço
+> que volta não é a mesma coisa que um serviço que volta **inteiro** — a chave de
+> idempotência mora no SQLite, não na memória do processo, então um tablet que reenvia por
+> timeout durante a queda não abre um segundo chamado para a mesma emergência.
+>
+> Os quatro itens restantes (4 a 7) e a linha do tablet no item 1 seguem `⏳ pendente` com
+> o espaço "medido" **vazio de propósito**. Todos dependem do tablet em mãos: tela que não
+> apaga, fila com o wifi desligado, totem com a Pi fora do ar, e volta à aplicação depois
+> do reboot do aparelho. Preencher é parte do aceite — *"reiniciou rápido"* não é um
+> resultado.
 
 ---
 

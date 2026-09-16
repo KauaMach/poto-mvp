@@ -18,10 +18,11 @@ aceite: *"reiniciou rápido"* não é um resultado.
 | Tablet | Galaxy Tab A11 8,7" |
 | build-id no ar | *(`make build-id`)* |
 
-> **O que já foi verificado e o que não foi.** O item 3 (integridade do banco)
-> foi executado e tem número real. Os demais exigem a Pi e o tablet, que não
-> estavam alcançáveis quando este roteiro foi escrito — estão marcados
-> `⏳ pendente` e o espaço "medido" está vazio de propósito.
+> **O que já foi verificado e o que não foi.** Executados com número real: os
+> itens **1** (lado da Pi), **2** e **3**. O que falta depende do **tablet em
+> mãos** — itens 4 a 7, mais a linha do tablet no item 1. Esses seguem marcados
+> `⏳ pendente` com o espaço "medido" vazio de propósito: *"reiniciou rápido"*
+> não é um resultado.
 
 ---
 
@@ -35,12 +36,18 @@ time until curl -sf http://RaspPoto.local:8000/api/v1/health >/dev/null; do slee
 
 | critério | esperado | medido |
 |---|---|---|
-| API respondendo após reboot | **< 60 s** | ⏳ |
+| API respondendo após reboot | **< 60 s** | **31 s** ✅ (16/09) |
 | Tablet reconecta **sem toque** | automático | ⏳ |
+
+Os 31 s são contados do **disparo do `reboot`**, não do fim do desligamento — a
+medida inclui a Pi descer e subir, e foi feita de outra máquina, pela rede, que
+é a posição do tablet. `is-enabled` **enabled**, `is-active` **active**,
+`/health` com `status: ok`.
 
 O tablet reconecta porque o WebSocket tem reconexão de espera crescente
 (MVP-054) e o dreno da fila roda a cada 15 s (MVP-058) — não porque alguém
-recarrega a página.
+recarrega a página. Essa linha continua pendente **de propósito**: o mecanismo
+tem teste, mas "reconectou sem ninguém tocar" só se comprova olhando o tablet.
 
 ---
 
@@ -54,10 +61,21 @@ time until curl -sf http://127.0.0.1:8000/api/v1/health >/dev/null; do sleep 1; 
 
 | critério | esperado | medido |
 |---|---|---|
-| systemd reergue | **< 10 s** | ⏳ |
+| systemd reergue | **< 10 s** | **4,8 s** ✅ (16/09) |
+| `NRestarts` incrementa | 1 | **1** ✅ |
+| Acionamento depois do restart | 201 | **201 em 0,135 s** ✅ |
+| Idempotência sobrevive ao restart | mesmo `chamado_id` | **✅ `duplicado: true`** |
 
 `RestartSec=3` mais o tempo de subida do uvicorn. Se passar de 10 s, o suspeito
 é a carga do classificador — o `/health` diz se ele está sendo carregado.
+
+As duas últimas linhas não estavam no roteiro original e valem mais que o tempo.
+Um serviço que **volta** não é a mesma coisa que um serviço que volta **inteiro**:
+o `POST /eventos` depois do `kill -9` devolveu 201 em 135 ms, e o reenvio do
+mesmo `evento_id` devolveu o **mesmo** `CALL-2026-000003` com `duplicado: true`.
+A chave de idempotência mora no SQLite, não na memória do processo — então um
+tablet que reenvia por timeout durante a queda não cria um segundo chamado para
+a mesma emergência. É a garantia da MVP-016 atravessando uma morte súbita.
 
 ---
 
