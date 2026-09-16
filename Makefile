@@ -22,7 +22,7 @@ define exige
 	}
 endef
 
-.PHONY: help setup dev backend frontend build test lint train-clf seed demo-reset clean
+.PHONY: help setup dev backend serve frontend build test lint train-clf seed demo-reset clean
 
 help: ## Lista os alvos disponíveis
 	@echo ""
@@ -53,15 +53,37 @@ dev: ## Sobe backend (:8000) e frontend (:5173) juntos
 	( cd $(FRONTEND) && npm run dev -- --port $(FRONTEND_PORT) ) & \
 	wait
 
-backend: ## Sobe só a API
+backend: ## Sobe só a API, em modo de desenvolvimento (recarrega ao salvar)
 	$(call exige,$(BACKEND)/app/main.py,MVP-026)
 	cd $(BACKEND) && uv run uvicorn app.main:app --reload --port $(BACKEND_PORT) $(ENV_FLAG)
+
+# `serve` é o modo de produção, e existe para ser **o mesmo comando** que a unit
+# systemd da MVP-067 executa. Dois comandos diferentes divergiriam, e a
+# divergência apareceria só na Pi.
+#
+# Duas diferenças em relação a `backend`, e as duas importam:
+#
+#   --host 0.0.0.0   sem isto o uvicorn escuta só em 127.0.0.1 e o tablet não
+#                    alcança — o sintoma é "funciona na Pi, não funciona no
+#                    tablet", que custa meia hora até alguém suspeitar do bind.
+#   sem --reload     o observador de arquivos gasta CPU e memória vigiando uma
+#                    árvore que não muda, e um toque acidental no código
+#                    reiniciaria o serviço no meio de um atendimento.
+serve: ## Sobe a API como em produção: 0.0.0.0, sem reload
+	$(call exige,$(BACKEND)/app/main.py,MVP-026)
+	$(call exige,$(FRONTEND)/dist/index.html,MVP-066)
+	cd $(BACKEND) && uv run uvicorn app.main:app \
+		--host 0.0.0.0 --port $(BACKEND_PORT) $(ENV_FLAG)
 
 frontend: ## Sobe só o frontend em modo de desenvolvimento
 	cd $(FRONTEND) && npm run dev -- --port $(FRONTEND_PORT)
 
 build: ## Build de produção do frontend (o backend passa a servir tudo)
 	cd $(FRONTEND) && npm run build
+	@echo ""
+	@echo "  dist/ pronto — o backend serve a aplicação e a API na mesma origem."
+	@echo "  Suba com 'make serve' e abra http://$$(hostname -I 2>/dev/null | awk '{print $$1}'):$(BACKEND_PORT)"
+	@echo ""
 
 test: ## Roda a suíte de testes do backend
 	cd $(BACKEND) && uv run pytest

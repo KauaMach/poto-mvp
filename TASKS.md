@@ -96,7 +96,7 @@
 | MVP-076 | Captura e stream de áudio (ALSA) | F8b | P0 | 073, 077 | Pendente |
 | MVP-078 | Visualização no painel | F8b | P0 | 063, 075, 076 | Pendente |
 | MVP-079 | Custo de CPU e latência na Pi | F8b | P0 | 075, 076 | Pendente |
-| MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | Pendente |
+| MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | ✅ Concluída |
 | MVP-066b | `make deploy` e build-id verificável | F9 | P0 | 066 | Pendente |
 | MVP-067 | Unit systemd na Pi (API) | F9 | P0 | 066 | Pendente |
 | MVP-067b | Endereçamento estável da Pi (mDNS) | F9 | P0 | 067 | Pendente |
@@ -2455,8 +2455,8 @@
 
 ### MVP-066 — Build integrado servido pelo backend
 - **Descrição:** Um processo só. **Aqui se verifica explicitamente o defeito que quebrou o kiosk do projeto antigo.**
-- **Prioridade:** P0 · **Depende de:** 026, 055, 060 · **Status:** Pendente
-- **Arquivos:** `Makefile`, `backend/app/main.py`
+- **Prioridade:** P0 · **Depende de:** 026, 055, 060 · **Status:** ✅ Concluída
+- **Arquivos:** `Makefile`
 - **Critérios de aceitação:**
   - `make build` gera `frontend/dist/` **com `index.html`, CSS, JS e fontes**
   - `GET /` → **200** com a aplicação (não 404, não JSON)
@@ -2465,7 +2465,33 @@
   - Funciona **sem** o servidor de desenvolvimento do Vite
   - uvicorn em `--host 0.0.0.0`: **acessível de outro dispositivo da rede**, não só de `localhost`
   - O backend serve `dist/` **venha ele de onde vier** — build local ou artefato copiado
-- **Como validar:** `make build && make backend`, depois `curl -o /dev/null -w "%{http_code}" http://<ip-da-pi>:8000/` → `200` **de outra máquina**
+- **Como validar:** `make build && make serve`, depois `curl` pelo IP da rede — **feito**,
+  sem servidor do Vite:
+  `/` 200 html · `/painel` 200 · `/painel/` 200 · `/rota-inventada` 200 (fallback de SPA) ·
+  `/api/v1/health` 200 json · `/fonts/michroma-latin.woff2` 200 font/woff2 ·
+  `/manifest.webmanifest` 200 · `/icones/poto-192.png` 200 · `/api/v1/nao-existe` **404 json**
+
+> **`make serve` existe para ser o mesmo comando que a unit systemd executa** (MVP-067).
+> Dois comandos diferentes divergiriam, e a divergência apareceria só na Pi. Duas
+> diferenças em relação a `make backend`, e as duas importam:
+>
+> - **`--host 0.0.0.0`** — sem isto o uvicorn escuta só em `127.0.0.1` e o tablet não
+>   alcança. O sintoma é "funciona na Pi, não funciona no tablet", que custa meia hora até
+>   alguém suspeitar do bind.
+> - **sem `--reload`** — o observador de arquivos gasta CPU e memória vigiando uma árvore
+>   que não muda, e um toque acidental no código reiniciaria o serviço no meio de um
+>   atendimento.
+>
+> O último critério — *"serve `dist/` venha ele de onde vier"* — foi testado copiando o
+> `dist/` para fora da árvore do projeto e subindo com `POTO_FRONTEND_DIST` apontando para
+> lá, que é exatamente o estado da Pi depois de um rsync. Serve igual, e o `/health` avisa o
+> que falta (naquele momento, o build-id — que a MVP-066b gera).
+>
+> Nota de ambiente: a verificação foi feita pelo **IP de rede desta máquina**, não por
+> `localhost`. Um bind restrito a `127.0.0.1` recusaria a conexão, então o teste prova o
+> `0.0.0.0`. O `curl` literalmente *de outra máquina* não foi possível: este ambiente
+> bloqueia TCP de saída fora da 443 — o mesmo motivo pelo qual a Pi está inalcançável por
+> SSH agora.
 
 > **A Pi não compila o frontend.** Verificado no smoke test: o toolchain do Vite 8 é Rust
 > compilado por arquitetura (`@rolldown/binding-linux-x64`, `lightningcss-linux-x64`,
