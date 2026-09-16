@@ -135,3 +135,79 @@ export function limpar(): void {
 
 export const FILA_CHAVE = CHAVE;
 export const FILA_LIMITE = LIMITE;
+
+/* --- Dreno (MVP-058) ------------------------------------------------------
+ *
+ * Reenvia o que está guardado, **um por vez**. O serial não é preferência de
+ * estilo: 50 itens em paralelo abrem 50 conexões de um totem que acabou de
+ * recuperar uma rede instável, e a primeira coisa que acontece é a rede cair de
+ * novo. Em série, cada falha para o dreno ali mesmo — se um não passou, o
+ * próximo também não vai.
+ */
+
+/** Um dreno por vez. Sem esta trava, o timer de 15 s e o evento `online`
+ * podem disparar juntos e o mesmo item seria enviado duas vezes — o backend
+ * deduplicaria pelo `evento_id`, mas seriam duas requisições desnecessárias
+ * numa rede que acabou de voltar. */
+let drenando = false;
+
+export type ResultadoDreno = {
+  enviados: number;
+  restantes: number;
+  /** `true` se o dreno parou por falha, `false` se esvaziou a fila. */
+  interrompido: boolean;
+};
+
+/**
+ * Tenta reenviar a fila inteira.
+ *
+ * Recebe os enviadores por parâmetro em vez de importar `api.ts`: a fila não
+ * precisa conhecer o transporte, e a inversão é o que torna o dreno testável
+ * sem rede.
+ */
+export async function drenar(
+  enviarEvento: (corpo: EventoIn) => Promise<unknown>,
+  enviarPanico: (corpo: PanicoIn) => Promise<unknown>,
+): Promise<ResultadoDreno> {
+  if (drenando) return { enviados: 0, restantes: quantosPendentes(), interrompido: true };
+  drenando = true;
+
+  let enviados = 0;
+  try {
+    /* Relê a fila do armazenamento a cada volta em vez de iterar um instantâneo:
+     * um acionamento novo durante o dreno entra na fila, e um instantâneo velho
+     * o ignoraria. */
+    for (;;) {
+      const item = pendentes()[0];
+      if (!item) return { enviados, restantes: 0, interrompido: false };
+
+      try {
+        if (item.tipo === "panico") {
+          await enviarPanico(item.corpo as PanicoIn);
+        } else {
+          await enviarEvento(item.corpo as EventoIn);
+        }
+        /* Só sai da fila depois do sucesso. Remover antes perderia o pedido se
+         * o envio falhasse no meio. */
+        remover(item.corpo.evento_id);
+        enviados++;
+      } catch (erro) {
+        marcarTentativa(item.corpo.evento_id);
+
+        /* `ErroApi` significa que o servidor **recebeu e recusou**. Reenviar o
+         * mesmo payload falharia igual, e o item travaria a fila para sempre —
+         * bloqueando os pedidos atrás dele, que podem ser válidos. Descarta e
+         * segue; a alternativa é uma fila permanentemente entupida. */
+        if (erro instanceof Error && erro.name === "ErroApi") {
+          remover(item.corpo.evento_id);
+          continue;
+        }
+
+        /* Falha de rede: para aqui. Se este não passou, o próximo não vai. */
+        return { enviados, restantes: quantosPendentes(), interrompido: true };
+      }
+    }
+  } finally {
+    drenando = false;
+  }
+}

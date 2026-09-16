@@ -13,6 +13,7 @@ import { useCallback, useState } from "react";
 import { enviarEvento, enviarPanico, novoEvento, novoPanico } from "../comum/api";
 import { beep } from "../comum/beep";
 import { enfileirar } from "../comum/fila";
+import { useFila } from "../comum/useFila";
 import type { EventoOut, PanicoOut } from "../comum/tipos";
 import { useOnline } from "../comum/useOnline";
 import { Panic, PanicAjuda } from "../componentes/Panic";
@@ -35,6 +36,10 @@ type Estado =
 export function Totem() {
   const online = useOnline();
   const [estado, setEstado] = useState<Estado>({ tela: "inicio" });
+  /* O intervalo vem do `/config` (`totem_offline_seg`, MVP-037). Até o totem
+   * buscá-lo — e offline ele nunca busca — vale o mesmo default do backend, que
+   * é a razão de a constante existir num lugar só. */
+  const { naFila, recontar } = useFila(INTERVALO_DRENO_SEG);
 
   const voltar = useCallback(() => setEstado({ tela: "inicio" }), []);
 
@@ -61,6 +66,9 @@ export function Totem() {
        */
       if (erro instanceof Error && erro.name === "ErroRede") {
         const guardado = enfileirar("evento", evento);
+        /* Reconta na hora: o badge tem que aparecer no mesmo quadro da
+         * confirmação, não no próximo ciclo de dreno. */
+        recontar();
         setEstado({
           tela: "confirmado",
           offline: true,
@@ -73,7 +81,7 @@ export function Totem() {
         mensagem: "Não foi possível registrar agora. Tente novamente.",
       });
     }
-  }, []);
+  }, [recontar]);
 
   const acionarPanico = useCallback(async () => {
     /* O instante é capturado **antes** do envio: o cronômetro conta desde o
@@ -93,6 +101,7 @@ export function Totem() {
          * rede voltar. O que **não** existe ainda é o status ao vivo — sem
          * WebSocket não há como saber se a central recebeu. */
         const guardado = enfileirar("panico", panico);
+        recontar();
         setEstado({
           tela: "alerta",
           desde,
@@ -113,7 +122,7 @@ export function Totem() {
         mensagem: "Não foi possível registrar agora. Tente novamente.",
       });
     }
-  }, []);
+  }, [recontar]);
 
   if (estado.tela === "alerta") {
     /* `semCromo`: o alerta ativo ocupa a tela inteira. Um header com o
@@ -133,7 +142,7 @@ export function Totem() {
 
   if (estado.tela === "confirmado") {
     return (
-      <Shell online={online} onInicio={voltar}>
+      <Shell online={online} naFila={naFila} onInicio={voltar}>
         <Confirmacao
           resultado={estado.resultado}
           offline={estado.offline}
@@ -146,6 +155,7 @@ export function Totem() {
   return (
     <Shell
       online={online}
+      naFila={naFila}
       onInicio={voltar}
       rodape={
         <>
@@ -166,6 +176,15 @@ export function Totem() {
     </Shell>
   );
 }
+
+/** Intervalo do dreno, em segundos.
+ *
+ * Espelha `POTO_TOTEM_OFFLINE_SEG` do backend (MVP-037). Duplicado aqui porque
+ * offline **não há `/config`** para consultar — e é justamente offline que o
+ * dreno importa. O `/config` continua sendo a fonte quando há rede; esta
+ * constante é o piso.
+ */
+const INTERVALO_DRENO_SEG = 15;
 
 /** Confirmação montada **no cliente**, para quando o envio não chegou.
  *

@@ -81,7 +81,7 @@
 | MVP-055b | Manifest e modo autônomo no tablet | F6 | P0 | 055 | ✅ Concluída |
 | MVP-056 | Acessibilidade AA | F6 | P1 | 055 | ⚠️ Parcial |
 | MVP-057 | Fila offline em `localStorage` | F7 | P0 | 048 | ✅ Concluída |
-| MVP-058 | Dreno automático e badge de fila | F7 | P0 | 057 | Pendente |
+| MVP-058 | Dreno automático e badge de fila | F7 | P0 | 057 | ✅ Concluída |
 | MVP-059 | Re-triagem protetiva no dreno | F7 | P0 | 023, 058 | Pendente |
 | MVP-060 | Shell e lista do painel | F8 | P0 | 032, 042 | Pendente |
 | MVP-061 | Card de chamado com gravidade | F8 | P0 | 060 | Pendente |
@@ -2029,14 +2029,53 @@
 
 ### MVP-058 — Dreno automático e badge de fila
 - **Descrição:** Reenvio ao voltar a conectividade.
-- **Prioridade:** P0 · **Depende de:** 057 · **Status:** Pendente
-- **Arquivos:** `frontend/src/comum/fila.ts`, `StatusPill.tsx`
+- **Prioridade:** P0 · **Depende de:** 057 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/comum/{fila.ts,useFila.ts}`,
+  `frontend/src/totem/Totem.tsx`, `frontend/scripts/fila.casos.ts`
 - **Critérios de aceitação:**
   - Dreno no evento `online` e a cada 15 s
   - Badge "N na fila" visível no header
   - Item drenado com sucesso sai da fila; falha permanece
   - Dreno é serial (não dispara N requisições simultâneas)
-- **Como validar:** religar o backend e ver a fila esvaziar sozinha
+- **Como validar:** religar o backend e ver a fila esvaziar sozinha —
+  `npm run check-fila`, **22 casos** (13 da fila + 9 do dreno)
+
+> **Os dois gatilhos são ambos necessários.** O evento `online` é imediato mas mente —
+> `navigator.onLine` diz que a interface de rede subiu, não que o backend responde. O
+> intervalo de 15 s cobre o caso em que `online` **nunca dispara** porque o wi-fi nunca
+> caiu: o que caiu foi o servidor. Sem o intervalo, um totem conectado a um backend
+> reiniciado ficaria com a fila parada para sempre; sem o `online`, o dreno esperaria até
+> 15 s depois de a rede voltar — longo quando alguém está esperando socorro.
+>
+> **O dreno é serial, e não é preferência de estilo.** 50 itens em paralelo abrem 50
+> conexões de um totem que acabou de recuperar uma rede instável, e a primeira coisa que
+> acontece é a rede cair de novo. Em série, a primeira falha para o dreno ali mesmo — se um
+> não passou, o próximo também não vai. Verificado por mutação: trocar por
+> `Promise.allSettled` derruba 5 casos.
+>
+> **`ErroApi` descarta o item; `ErroRede` o mantém.** Um payload recusado pelo servidor
+> falharia igual a cada tentativa e **travaria a fila para sempre**, bloqueando os pedidos
+> atrás dele — que podem ser válidos. É a consequência mais importante da distinção de erro
+> criada na MVP-048.
+>
+> O item sai da fila **depois** do sucesso, nunca antes: remover antes perderia o pedido se
+> o envio falhasse no meio. E a fila é relida a cada volta em vez de iterar um instantâneo,
+> porque um acionamento novo durante o dreno entra na fila e um instantâneo velho o
+> ignoraria — há teste para isso.
+>
+> A trava `drenando` existe porque o timer e o evento `online` podem disparar juntos. O
+> backend deduplicaria pelo `evento_id`, mas seriam duas requisições desnecessárias numa
+> rede que acabou de voltar.
+>
+> `drenar()` recebe os enviadores por parâmetro em vez de importar `api.ts`: a fila não
+> precisa conhecer o transporte, e a inversão é o que torna o dreno testável sem rede.
+>
+> O badge reconta **na hora** de enfileirar, não no próximo ciclo: ele tem que aparecer no
+> mesmo quadro da confirmação.
+>
+> Nota: `INTERVALO_DRENO_SEG = 15` duplica `POTO_TOTEM_OFFLINE_SEG` do backend porque
+> **offline não há `/config`** para consultar — e é justamente offline que o dreno importa.
+> O `/config` continua sendo a fonte quando há rede; a constante é o piso.
 
 ### MVP-059 — Re-triagem protetiva no dreno
 - **Descrição:** Fechar a versão offline do defeito de rebaixamento. No projeto antigo, conversa sem rede virava sempre `ouvidoria`.
