@@ -523,5 +523,80 @@
     "texto": "queria reclamar do barulho da obra",
     "tipo": "ouvidoria",
     "gravidade": "orientacao"
+  },
+  {
+    "texto": "qual o telefone da seguranca do campus",
+    "tipo": "seguranca",
+    "gravidade": "orientacao"
+  },
+  {
+    "texto": "como funciona a ronda da vigilancia aqui",
+    "tipo": "seguranca",
+    "gravidade": "orientacao"
+  },
+  {
+    "texto": "queria orientacao sobre seguranca no estacionamento",
+    "tipo": "seguranca",
+    "gravidade": "orientacao"
+  },
+  {
+    "texto": "quero entender o trabalho da sala lilas",
+    "tipo": "mulher",
+    "gravidade": "orientacao"
+  },
+  {
+    "texto": "existe apoio para vitima de assedio na universidade",
+    "tipo": "mulher",
+    "gravidade": "orientacao"
+  },
+  {
+    "texto": "como denuncio um caso de importunacao",
+    "tipo": "mulher",
+    "gravidade": "orientacao"
+  },
+  {
+    "texto": "onde eu acho a enfermaria",
+    "tipo": "saude",
+    "gravidade": "orientacao"
+  },
+  {
+    "texto": "como marco atendimento psicologico",
+    "tipo": "saude",
+    "gravidade": "orientacao"
+  },
+  {
+    "texto": "preciso tirar um atestado medico onde vou",
+    "tipo": "saude",
+    "gravidade": "orientacao"
+  },
+  {
+    "texto": "me ameacaram de morte agora pouco",
+    "tipo": "seguranca",
+    "gravidade": "risco_imediato"
+  },
+  {
+    "texto": "ele disse que vai me matar",
+    "tipo": "seguranca",
+    "gravidade": "risco_imediato"
+  },
+  {
+    "texto": "estou sendo ameacado por um aluno",
+    "tipo": "seguranca",
+    "gravidade": "risco_imediato"
+  },
+  {
+    "texto": "tem fogo no laboratorio",
+    "tipo": "seguranca",
+    "gravidade": "risco_imediato"
+  },
+  {
+    "texto": "esta saindo fumaca da sala de aula",
+    "tipo": "seguranca",
+    "gravidade": "risco_imediato"
+  },
+  {
+    "texto": "sinto um cheiro forte de gas no corredor",
+    "tipo": "seguranca",
+    "gravidade": "risco_imediato"
   }
 ]

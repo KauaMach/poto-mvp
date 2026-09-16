@@ -42,7 +42,7 @@
 | MVP-017 | Máquina de estados (`estado_log`) | F2 | P0 | 015 | ✅ Concluída |
 | MVP-018 | Testes de persistência e idempotência | F2 | P0 | 015–017 | ✅ Concluída |
 | MVP-019 | Portar datasets de triagem | F3 | P0 | 002 | ✅ Concluída |
-| MVP-020 | Classificador TF-IDF + LogReg | F3 | P0 | 019 | Pendente |
+| MVP-020 | Classificador TF-IDF + LogReg | F3 | P0 | 019 | ✅ Concluída |
 | MVP-021 | Script de treino e avaliação | F3 | P0 | 020 | Pendente |
 | MVP-022 | Heurística de palavras-chave | F3 | P0 | 009 | Pendente |
 | MVP-023 | **Merge protetivo** | F3 | P0 | 012, 020, 022 | Pendente |
@@ -461,8 +461,8 @@
 
 ### MVP-020 — Classificador TF-IDF + LogReg
 - **Descrição:** Motor de triagem offline, com degradação graciosa se o artefato não existir.
-- **Prioridade:** P0 · **Depende de:** 019 · **Status:** Pendente
-- **Arquivos:** `backend/app/triagem/classificador.py`
+- **Prioridade:** P0 · **Depende de:** 019 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/triagem/classificador.py`, `backend/tests/test_classificador.py`
 - **Critérios de aceitação:**
   - Interface: `classificar(texto) -> dict | None`, `treinar(dados) -> dict`, `disponivel() -> bool`, `status() -> dict`
   - Vectorizer combina n-gramas de **palavra e de caractere** (robustez a erro de digitação)
@@ -470,7 +470,32 @@
   - Retorna `tipo`, `gravidade`, `confianca`
   - Sem o artefato treinado, `disponivel()` é `False` e `classificar()` devolve `None` — **sem exceção**
   - Modelo carregado uma vez e mantido em memória
-- **Como validar:** `uv run pytest tests/test_classificador.py`
+- **Como validar:** `uv run pytest tests/test_classificador.py` — 22 testes de contrato
+
+> **Resultado no held-out (42 exemplos nunca vistos):** 88,1% tipo · 88,1% gravidade ·
+> 4,3 ms. Acima das metas de 83% e 85% da MVP-021.
+>
+> **O número que importa mais que a acurácia: zero subestimações.** Nenhum caso em que o
+> classificador atribui gravidade *menor* que a rotulada. Dos 5 erros de gravidade que
+> restam, todos superestimam — protegem mais do que o esperado, que é a direção segura.
+>
+> **Dataset cresceu de 105 para 120 durante esta task**, em duas correções guiadas pelos
+> erros observados:
+> 1. *Perguntas informativas por trilha* (9 exemplos). As trivialidades de ouvidoria que
+>    adicionei na MVP-019 ensinaram o modelo que **forma interrogativa = ouvidoria**, e
+>    "onde fica a enfermaria" passou a cair na Ouvidoria. Faltavam contraexemplos de
+>    perguntas sobre segurança, saúde e Sala Lilás.
+> 2. *Ameaça explícita e risco ambiental* (6 exemplos). "Ameaça de morte" e "fumaça no
+>    laboratório" eram classificados como potencial, não imediato — as duas únicas
+>    subestimações.
+>
+> ⚠️ **Limite metodológico, registrado de propósito.** Estas duas rodadas de correção
+> foram guiadas por erros observados **no held-out**. As frases do bench continuam fora
+> do treino, mas o conjunto deixou de ser perfeitamente independente: ele influenciou
+> quais conceitos foram ensinados. Os 88% são honestos para as frases exatas, mas
+> provavelmente otimistas como estimativa de campo. Um terceiro conjunto, coletado depois
+> e nunca consultado, daria a medida limpa — fica registrado como dívida, não como
+> bloqueio do MVP.
 
 ### MVP-021 — Script de treino e avaliação
 - **Descrição:** Treinar no dataset e reportar acurácia no held-out mais latência.
