@@ -1,0 +1,27 @@
+# --- Python / uv ---
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Banco local — recriado por init_db() a cada ambiente
+backend/poto.db
+backend/poto.db-wal
+backend/poto.db-shm
+
+# Artefato do classificador: gerado por `make setup` a partir do dataset
+# versionado. Não commitar binário — o dataset é a fonte da verdade.
+backend/app/data/*.joblib
+
+# --- Node / Vite ---
+frontend/node_modules/
+frontend/dist/
+
+# --- Segredos ---
+.env
+.env.local
+
+# --- Sistema ---
+.DS_Store
+*:Zone.Identifier
