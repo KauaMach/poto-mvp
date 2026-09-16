@@ -369,3 +369,167 @@
   font-size: 13px;
   text-decoration: underline;
 }
+
+/* --- Mídia no chamado (MVP-078) -------------------------------------------
+ *
+ * Fica **dentro** do cartão, entre o relato e as ações. A posição é a leitura:
+ * o operador lê o que aconteceu, decide se precisa olhar, e só então age.
+ * Acima do relato, a câmera viraria a primeira coisa oferecida — e a primeira
+ * coisa oferecida é a que mais se usa.
+ */
+
+.poto-midia {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--line);
+}
+
+.poto-midia-controles {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+/* Secundário e não primário: a ferrugem do `--rust` é reservada para a ação
+ * que o painel quer que aconteça, que é **reconhecer** o chamado. Ligar a
+ * câmera é opcional, e um botão da mesma cor competiria com ela. */
+.poto-botao-secundario {
+  min-height: 40px;
+  padding: 0 var(--space-md);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.poto-botao-secundario:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (hover: hover) {
+  .poto-botao-secundario:hover:not(:disabled) {
+    border-color: var(--muted);
+  }
+}
+
+/* Botão de texto para "Encerrar": ele mora dentro do cabeçalho do player, e
+ * uma borda ali competiria com a moldura do próprio vídeo. */
+.poto-botao-texto {
+  min-height: 32px;
+  padding: 0 var(--space-xs);
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .poto-botao-texto:hover {
+    color: var(--ink);
+  }
+}
+
+/* Sem dispositivo, texto — nunca um quadro preto. "Não há câmera" manda
+ * conferir o cabo; "a câmera falhou" manda reiniciar o serviço, e confundir os
+ * dois custa o tempo de um atendimento. */
+.poto-midia-vazio {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--line);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--faint);
+}
+
+.poto-midia-erro {
+  margin-top: var(--space-xs);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--crit);
+}
+
+.poto-midia-player {
+  margin: var(--space-sm) 0 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.poto-midia-cabecalho {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+/* "AO VIVO" em caixa-alta e com peso: é a informação que não pode passar
+ * batida. Uma câmera ligada tem que ser óbvia para quem está perto da tela,
+ * não só para quem a ligou. */
+.poto-ao-vivo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--crit);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.poto-midia-nome {
+  color: var(--muted);
+  /* Encolhe antes do prazo e do botão: o nome do dispositivo é o menos
+   * importante dos três, e num cartão estreito é o que pode truncar. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poto-midia-prazo {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+/* `aspect-ratio` fixo em 4/3 porque é o que a captura entrega (640×480,
+ * MVP-074). Sem ele, o cartão **salta de altura** quando o primeiro frame
+ * chega — e num painel de vinte cartões isso empurra a lista debaixo do cursor
+ * de quem está lendo. */
+.poto-midia-video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--ink);
+}
+
+.poto-midia-audio {
+  display: block;
+  width: 100%;
+  padding: var(--space-xs);
+}
+
+/* O ponto pulsante do "AO VIVO" respeita movimento reduzido: com a preferência
+ * ligada ele fica **aceso e fixo**, não invisível. Sumir tiraria o sinal de
+ * quem pediu menos animação, não menos informação. */
+@media (prefers-reduced-motion: reduce) {
+  .poto-midia-video {
+    /* Nada a fazer aqui além de não animar; o vídeo em si é o conteúdo. */
+    animation: none;
+  }
+}

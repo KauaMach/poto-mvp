@@ -15,8 +15,13 @@
  *   reconcilia.
  */
 import { useCallback, useEffect, useState } from "react";
-import { listarChamados, obterConfig } from "../comum/api";
-import type { Chamado, ConfigPublica, EventoWS } from "../comum/tipos";
+import { listarChamados, listarDispositivos, obterConfig } from "../comum/api";
+import type {
+  Chamado,
+  ConfigPublica,
+  Dispositivo,
+  EventoWS,
+} from "../comum/tipos";
 import { useEventosWS } from "../comum/useEventosWS";
 import { Wordmark } from "../componentes/Wordmark";
 import { BarraFiltros } from "./BarraFiltros";
@@ -33,6 +38,10 @@ export function Painel() {
   const [chamados, setChamados] = useState<Chamado[]>([]);
   const [config, setConfig] = useState<ConfigPublica | null>(null);
   const [carga, setCarga] = useState<Carga>({ estado: "carregando" });
+  /* Buscado **uma vez, aqui**, e passado para baixo (MVP-078). Com vinte
+   * cartões na tela, cada um pedindo `/dispositivos`, seriam vinte requisições
+   * para a mesma resposta. */
+  const [dispositivos, setDispositivos] = useState<Dispositivo[]>([]);
   const [filtros, setFiltros] = useState<Filtros>(FILTROS_VAZIOS);
 
   /* Insere ou substitui **no lugar**, indexando por `chamado_id`.
@@ -100,6 +109,31 @@ export function Painel() {
     };
   }, []);
 
+  /* Os dispositivos vêm num efeito **separado**, e isso não é desorganização.
+   *
+   * Se `/dispositivos` entrasse no `Promise.all` acima, uma falha na detecção
+   * de hardware — câmera arrancada, `v4l2-ctl` ausente, `arecord` travado —
+   * levaria a tela inteira para o estado de erro e o operador não veria
+   * chamado nenhum. A mídia é acessório; **a lista é o trabalho**.
+   *
+   * Falhar aqui é silencioso de propósito: sem dispositivos, o cartão mostra
+   * "nenhuma câmera ou microfone disponível", que é a mesma coisa que o
+   * operador precisa saber em ambos os casos.
+   */
+  useEffect(() => {
+    let vivo = true;
+    void listarDispositivos()
+      .then((lista) => {
+        if (vivo) setDispositivos(lista);
+      })
+      .catch(() => {
+        /* Lista vazia é o estado inicial e a degradação correta. */
+      });
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
   return (
     <div className="poto-painel">
       <header className="poto-painel-topo">
@@ -139,6 +173,7 @@ export function Painel() {
               chamados={aplicarFiltros(chamados, filtros)}
               onMudou={aplicar}
               sla={config?.sla}
+              dispositivos={dispositivos}
               filtrado={temFiltro(filtros)}
             />
           </>

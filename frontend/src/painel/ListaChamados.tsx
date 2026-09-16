@@ -2,12 +2,14 @@
  *
  * A ordenação — a decisão que importa — vive em `ordenacao.ts`.
  */
-import type { Chamado } from "../comum/tipos";
+import type { Chamado, Dispositivo } from "../comum/tipos";
 import { CardChamado } from "./CardChamado";
 import { ordenar } from "./ordenacao";
 
 type Props = {
   chamados: Chamado[];
+  /** Dispositivos de captura, buscados uma vez pelo painel (MVP-078). */
+  dispositivos: Dispositivo[];
   onMudou: (chamado: Chamado) => void;
   /** Prazos de SLA, de `GET /config` (MVP-064). */
   sla?: Record<string, number | null>;
@@ -15,7 +17,13 @@ type Props = {
   filtrado?: boolean;
 };
 
-export function ListaChamados({ chamados, onMudou, sla, filtrado }: Props) {
+export function ListaChamados({
+  chamados,
+  onMudou,
+  sla,
+  dispositivos,
+  filtrado,
+}: Props) {
   if (chamados.length === 0) {
     return (
       <p className="poto-vazio">
@@ -34,6 +42,7 @@ export function ListaChamados({ chamados, onMudou, sla, filtrado }: Props) {
           chamado={chamado}
           onMudou={onMudou}
           slaSegundos={sla?.[chamado.gravidade] ?? null}
+          dispositivos={dispositivos}
         />
       ))}
     </div>

@@ -13,8 +13,10 @@
 import type {
   Chamado,
   ConfigPublica,
+  Dispositivo,
   EventoIn,
   EventoOut,
+  MidiaSessao,
   PanicoIn,
   PanicoOut,
   TipoOcorrencia,
@@ -216,4 +218,62 @@ type CanalResultadoResposta = {
 
 export function obterConfig(): Promise<ConfigPublica> {
   return requisitar<ConfigPublica>("/config");
+}
+
+/* --- Mídia (MVP-078) ------------------------------------------------------
+ *
+ * Três funções e uma assimetria proposital: `fecharMidia` tem um caminho
+ * separado para o descarregamento da página. Ver a nota nela.
+ */
+
+export function listarDispositivos(): Promise<Dispositivo[]> {
+  return requisitar<Dispositivo[]>("/dispositivos");
+}
+
+export function abrirMidia(
+  chamadoId: string,
+  dispositivoId: string,
+): Promise<MidiaSessao> {
+  return requisitar<MidiaSessao>(
+    `/chamados/${encodeURIComponent(chamadoId)}/midia`,
+    { method: "POST", body: JSON.stringify({ dispositivo_id: dispositivoId }) },
+  );
+}
+
+/** Encerra a sessão. Sem `sessaoId`, encerra **todas** as do chamado.
+ *
+ * Devolve `204` sem corpo, então não passa pelo `requisitar` — ele faz
+ * `resposta.json()` e um 204 não tem JSON para decodificar.
+ */
+export async function fecharMidia(
+  chamadoId: string,
+  sessaoId?: string,
+): Promise<void> {
+  const busca = sessaoId ? `?sessao=${encodeURIComponent(sessaoId)}` : "";
+  await fetch(
+    `${BASE}/chamados/${encodeURIComponent(chamadoId)}/midia${busca}`,
+    { method: "DELETE" },
+  );
+}
+
+/** A mesma coisa, para quando a página está sendo descarregada.
+ *
+ * `keepalive` é o que faz a requisição sobreviver ao descarregamento: um
+ * `fetch` normal disparado em `pagehide` é **cancelado** junto com a página, e
+ * a sessão ficaria aberta até expirar — dez minutos de câmera ligada na
+ * auditoria, sem ninguém assistindo.
+ *
+ * `sendBeacon` seria o caminho natural, mas ele só faz `POST`. Daí o `fetch`
+ * com `keepalive`, que aceita qualquer método.
+ *
+ * Não é garantia: o navegador pode matar a aba antes. A rede de segurança é do
+ * backend, que expira a sessão sozinho e varre as vencidas no worker de SLA.
+ */
+export function fecharMidiaAoSair(chamadoId: string): void {
+  void fetch(`${BASE}/chamados/${encodeURIComponent(chamadoId)}/midia`, {
+    method: "DELETE",
+    keepalive: true,
+  }).catch(() => {
+    /* A página está indo embora; não há a quem reportar. */
+  });
 }

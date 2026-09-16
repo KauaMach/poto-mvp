@@ -94,7 +94,7 @@
 | MVP-077 | **Sessão de mídia com auditoria** | F8b | P0 | 073, 017 | ✅ Concluída |
 | MVP-075 | Stream MJPEG | F8b | P0 | 074, 077 | ✅ Concluída |
 | MVP-076 | Captura e stream de áudio (ALSA) | F8b | P0 | 073, 077 | ⚠️ Parcial |
-| MVP-078 | Visualização no painel | F8b | P0 | 063, 075, 076 | Pendente |
+| MVP-078 | Visualização no painel | F8b | P0 | 063, 075, 076 | ⚠️ Parcial |
 | MVP-079 | Custo de CPU e latência na Pi | F8b | P0 | 075, 076 | Pendente |
 | MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | ✅ Concluída |
 | MVP-066b | `make deploy` e build-id verificável | F9 | P0 | 066 | ✅ Concluída |
@@ -2683,15 +2683,98 @@
 
 ### MVP-078 — Visualização no painel
 - **Descrição:** O operador escolhe o dispositivo e vê/ouve, dentro do chamado.
-- **Prioridade:** P0 · **Depende de:** 063, 075, 076 · **Status:** Pendente
-- **Arquivos:** `frontend/src/painel/MidiaChamado.tsx`
+- **Prioridade:** P0 · **Depende de:** 063, 075, 076 · **Status:** ⚠️ Parcial — escrita e
+  verificada por renderização; **a imagem na tela exige a Pi**
+- **Arquivos:** `frontend/src/painel/MidiaChamado.tsx`,
+  `frontend/src/painel/CardChamado.tsx`, `frontend/src/painel/ListaChamados.tsx`,
+  `frontend/src/painel/Painel.tsx`, `frontend/src/comum/api.ts`,
+  `frontend/src/comum/tipos.ts`, `frontend/src/estilos/painel.css`,
+  `frontend/scripts/verificar-midia.mjs`
 - **Critérios de aceitação:**
   - Botão "Ver câmera" só aparece em chamado **ativo** e com dispositivo disponível
   - Seletor lista o que veio de `GET /dispositivos`, com status
   - Vídeo em `<img>`, áudio em `<audio>`; indicador visível de **AO VIVO**
   - Fechar o painel ou o chamado encerra a sessão (`DELETE`)
   - Sem dispositivo disponível, mensagem clara — não um quadro preto
-- **Como validar:** abrir um chamado ativo, ver a imagem, fechar e confirmar na auditoria as duas linhas
+- **Como validar:** abrir um chamado ativo, ver a imagem, fechar e confirmar na auditoria as
+  duas linhas — **o que é verificável sem hardware está automatizado** em
+  `npm run check-midia`, com 5 casos renderizados por `react-dom/server`:
+  chamado ativo com câmera, **encerrado**, **cancelado**, ativo sem dispositivo, e ativo
+  com câmera `em_uso`. Mutação: remover o guard `aberto` quebra 2 casos, ignorar o
+  `status` do dispositivo quebra 1, apagar a mensagem de vazio quebra 2.
+  `tsc` e `oxlint --deny-warnings` limpos; bundle **+4,44 KB de JS e +2,02 KB de CSS**,
+  medido contra o HEAD num worktree separado
+
+> **A condição de exibir é uma só, e é a mesma das ações do operador.** O `MidiaChamado`
+> só entra sob `aberto`, o conjunto `ABERTOS` que já governa o botão "Reconhecer" e o
+> contador de SLA. Duas condições separadas para a mesma ideia divergiriam, e a que
+> divergisse seria a da câmera.
+>
+> Isso é respaldado pelo backend, que recusa com 409 em chamado encerrado — mas oferecer
+> o botão e receber erro **ensinaria o operador a tentar**. O que se quer é que a
+> pergunta não apareça: um atendimento concluído não justifica olhar o corredor, e a
+> alternativa transformaria o histórico de chamados numa lista de pretextos.
+>
+> **`GET /dispositivos` é buscado uma vez, no painel, e desce por props.** Com vinte
+> cartões na tela, cada um pedindo, seriam vinte requisições para a mesma resposta.
+>
+> E num efeito **separado** do `Promise.all` que carrega chamados e `/config`: se a
+> detecção de hardware falhasse — câmera arrancada, `v4l2-ctl` ausente, `arecord`
+> travado — a tela inteira iria para o estado de erro e o operador não veria chamado
+> nenhum. A mídia é acessório; **a lista é o trabalho**. Falhar ali é silencioso de
+> propósito, porque o cartão já diz "nenhuma câmera ou microfone disponível", que é o que
+> o operador precisa saber nos dois casos.
+>
+> **O filtro é `status === "disponivel"`, não "a lista tem algo".** Uma câmera que o
+> backend detectou e marcou como ocupada ofereceria um botão que só pode falhar. É um dos
+> cinco casos do script, e a mutação que troca o filtro pelo tamanho da lista é pega.
+>
+> **O prazo da sessão fica visível, e o contador deriva de um instante absoluto.** A
+> primeira versão decrementava um contador a cada segundo, e tinha dois defeitos. O
+> navegador **estrangula `setInterval` em aba de fundo** — para uma vez por minuto, ou
+> congela — então um painel minimizado por dez minutos mostraria "encerra em 8:30" com a
+> sessão morta, e o operador veria o stream congelar contrariando a tela. E o
+> `setRestante(inicial)` dentro do efeito era `setState` síncrono em efeito, que o oxlint
+> acusou com razão e era redundante, porque o `<Player>` é chaveado por `sessao_id` e já
+> remonta. Com prazo absoluto, o relógio só reavalia: estrangulamento atrasa a atualização
+> da tela, não falsifica o número. Mais um `visibilitychange`, que recalcula no momento em
+> que o valor está mais defasado.
+>
+> **`pagehide`, não `beforeunload`, e `fetch` com `keepalive`.** O `useEffect` cobre fechar
+> o chamado, mudar o filtro e sair do painel; não cobre fechar a aba. O `beforeunload` não
+> dispara em iOS nem quando a aba é descartada por memória — os dois cenários de um painel
+> aberto num tablet por horas. E um `fetch` comum disparado no descarregamento é
+> **cancelado junto com a página**: `keepalive` é o que o faz sobreviver. `sendBeacon`
+> seria o caminho natural, mas ele só faz `POST`, e aqui é `DELETE`.
+>
+> Não é garantia — o navegador pode matar a aba antes. A rede de segurança é do backend,
+> que expira a sessão em 10 min e varre as vencidas no worker de SLA (MVP-077). Sem o
+> `keepalive`, porém, o caso comum deixaria dez minutos de câmera aberta na auditoria sem
+> ninguém assistindo, e para quem fiscaliza isso é indistinguível de vigilância.
+>
+> **Tira o player da tela antes de esperar o `DELETE`.** O `<img>` do MJPEG mantém a
+> conexão aberta enquanto estiver montado; deixá-lo ali até a resposta voltar continuaria
+> consumindo a câmera depois de o operador pedir para parar.
+>
+> **Sem `<Sym>` neste componente.** A fonte Material Symbols é servida subsetada pelos
+> sete nomes do `GlifoSym` (MVP-041) — 2,3 KB em vez de 363 KB. `camera` e `mic` não estão
+> nela, e pedir um glifo ausente **renderiza o nome como texto**: o botão mostraria a
+> palavra "camera". Acrescentá-los exigiria rebaixar a fonte com um `icon_names=` novo e
+> revalidar as ligaduras do subset. Não vale — o próprio `Sym` documenta que o ícone é
+> decorativo e "quem carrega o significado é sempre o rótulo".
+>
+> **`aspect-ratio: 4/3` no `<img>` do vídeo.** É o que a captura entrega (640×480,
+> MVP-074). Sem isso o cartão **salta de altura** quando o primeiro frame chega, e numa
+> lista de vinte cartões isso empurra o conteúdo debaixo do cursor de quem está lendo.
+>
+> **Botão secundário, não primário.** A ferrugem do `--rust` é reservada para a ação que o
+> painel quer que aconteça, que é reconhecer o chamado. Ligar a câmera é opcional, e um
+> botão da mesma cor competiria com ela.
+>
+> **O que o script não cobre, e é honesto dizer:** o indicador "AO VIVO", o contador
+> correndo e o `DELETE` ao sair dependem de uma sessão aberta, que exige `useEffect` e
+> `fetch` — nenhum dos dois roda em renderização de servidor. A imagem aparecendo de fato
+> e as duas linhas de auditoria ficam para a validação na Pi, junto com a MVP-079.
 
 ### MVP-079 — Custo de CPU e latência na Pi
 - **Descrição:** Provar que a mídia não compete com o núcleo. A Pi 5 **não tem encoder H.264 por hardware** — é por isso que o transporte é MJPEG.

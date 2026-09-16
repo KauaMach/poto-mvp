@@ -118,3 +118,38 @@ export type EventoWS =
   | { evento: "ping"; dados: Record<string, never> }
   | { evento: "novo_chamado"; dados: Chamado }
   | { evento: "atualizado"; dados: Chamado };
+
+/* --- Mídia (MVP-073 / MVP-077) ------------------------------------------- */
+
+export type TipoDispositivo = "camera" | "microfone";
+
+/** Um dispositivo de captura, como `GET /dispositivos` o descreve.
+ *
+ * `capacidades` fica como `Record<string, unknown>`: o conteúdo depende da
+ * origem (CSI traz `indice` e `rotacao`, ALSA traz `device` e `taxa_hz`), e
+ * tipar cada variante aqui obrigaria a mexer no frontend a cada hardware novo
+ * — sem que nenhuma tela use esses campos.
+ */
+export type Dispositivo = {
+  id: string;
+  tipo: TipoDispositivo;
+  nome: string;
+  dono: string;
+  status: string;
+  capacidades: Record<string, unknown>;
+};
+
+/** Autorização de captura concedida por `POST /chamados/{id}/midia`.
+ *
+ * `stream_url` **já vem montada**, com a sessão embutida. O painel não compõe
+ * essa URL: o formato do token é assunto do backend, e duplicá-lo aqui faria
+ * duas implementações divergirem no dia em que ele mudasse.
+ */
+export type MidiaSessao = {
+  sessao_id: string;
+  stream_url: string;
+  /** Segundos até expirar. O backend encerra sozinho ao fim do prazo. */
+  expira_em: number;
+  dispositivo_id: string;
+  tipo: TipoDispositivo;
+};

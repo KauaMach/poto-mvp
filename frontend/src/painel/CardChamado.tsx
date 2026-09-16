@@ -16,9 +16,10 @@
  */
 import { useCallback, useState } from "react";
 import { ackChamado, atualizarChamado } from "../comum/api";
-import type { Chamado, StatusChamado } from "../comum/tipos";
+import type { Chamado, Dispositivo, StatusChamado } from "../comum/tipos";
 import { Sym } from "../componentes/Sym";
 import { ContadorSLA } from "./ContadorSLA";
+import { MidiaChamado } from "./MidiaChamado";
 import {
   ABERTOS,
   COR_GRAVIDADE,
@@ -47,9 +48,16 @@ type Props = {
   onMudou: (chamado: Chamado) => void;
   /** Prazo da gravidade deste chamado, ou `null` se não escalona (MVP-064). */
   slaSegundos: number | null;
+  /** Dispositivos de captura disponíveis no totem (MVP-078). */
+  dispositivos: Dispositivo[];
 };
 
-export function CardChamado({ chamado, onMudou, slaSegundos }: Props) {
+export function CardChamado({
+  chamado,
+  onMudou,
+  slaSegundos,
+  dispositivos,
+}: Props) {
   const [ocupado, setOcupado] = useState(false);
   const aberto = ABERTOS.has(chamado.status);
 
@@ -134,6 +142,21 @@ export function CardChamado({ chamado, onMudou, slaSegundos }: Props) {
         /* Itálico e entre aspas: é a voz de quem pediu ajuda, não texto do
          * sistema. A distinção importa quando se lê rápido. */
         <p className="poto-card-relato">“{chamado.texto_livre}”</p>
+      )}
+
+      {/* Mídia só em chamado **ativo** (MVP-078).
+        *
+        * Duas razões, e a segunda é a que importa. A primeira é técnica: o
+        * backend recusa com 409 em chamado encerrado ou cancelado, então o
+        * botão não funcionaria. A segunda é de projeto: um atendimento
+        * concluído não justifica olhar o corredor, e oferecer o botão ali
+        * transformaria o histórico de chamados numa lista de pretextos para
+        * ligar a câmera.
+        *
+        * `aberto` é o mesmo conjunto que governa as ações do operador — a
+        * condição é uma só, e não duas que podem divergir. */}
+      {aberto && (
+        <MidiaChamado chamado={chamado} dispositivos={dispositivos} />
       )}
 
       <footer className="poto-card-rodape">
