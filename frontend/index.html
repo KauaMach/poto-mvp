@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#C0392B" />
+
+    <!-- Preload do que a primeira tela precisa. Sem isto os ícones chegam
+         depois do primeiro paint e os botões das trilhas piscam vazios. -->
+    <link rel="preload" href="/fonts/michroma-latin.woff2" as="font"
+          type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/inter-latin.woff2" as="font"
+          type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/material-symbols-rounded.woff2" as="font"
+          type="font/woff2" crossorigin />
     <title>P.O.T.O — Totem de Segurança</title>
   </head>
   <body>

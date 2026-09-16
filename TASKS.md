@@ -63,7 +63,7 @@
 | MVP-038 | Worker de SLA e escalonamento | F4 | P0 | 030, 033 | ✅ Concluída |
 | MVP-039 | Testes de contrato da API | F4 | P0 | 030–038 | ✅ Concluída |
 | MVP-040 | Autenticação por token no painel | F4 | P1 | 032 | ✅ Concluída |
-| MVP-041 | Fontes auto-hospedadas | F5 | P0 | 003 | Pendente |
+| MVP-041 | Fontes auto-hospedadas | F5 | P0 | 003 | ✅ Concluída |
 | MVP-042 | `tokens.css` e `base.css` | F5 | P0 | 003 | Pendente |
 | MVP-043 | Componente `<Sym>` (ícones) | F5 | P0 | 041, 042 | Pendente |
 | MVP-044 | Componentes `<Wordmark>` e `<StatusPill>` | F5 | P0 | 042, 043 | Pendente |
@@ -1251,13 +1251,44 @@
 
 ### MVP-041 — Fontes auto-hospedadas
 - **Descrição:** Baixar Michroma, Inter e Material Symbols para `public/fonts/`. No projeto antigo vinham de CDN e quebravam offline — inclusive **todos os ícones dos botões**.
-- **Prioridade:** P0 · **Depende de:** 003 · **Status:** Pendente
-- **Arquivos:** `frontend/public/fonts/`, `frontend/src/estilos/base.css`
+- **Prioridade:** P0 · **Depende de:** 003 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/public/fonts/`, `frontend/src/estilos/fontes.css`,
+  `frontend/src/main.tsx`, `frontend/index.html`
 - **Critérios de aceitação:**
   - `.woff2` locais de Michroma 400, Inter 400/500/600/700 e Material Symbols Rounded
   - `@font-face` com `font-display: swap`
   - **Zero referência a `fonts.googleapis.com` ou `fonts.gstatic.com`**
-- **Como validar:** DevTools → Network offline → recarregar: tipografia e ícones intactos; `grep -rn "googleapis" frontend/` vazio
+- **Como validar:** DevTools → Network offline → recarregar: tipografia e ícones intactos;
+  `grep -rn "googleapis" frontend/` vazio — **verificado, 0 hits**
+
+> **164 KB, não 916.** A primeira baixa ingênua — pedir Inter 400/500/600/700 e o
+> Material Symbols completo — deu 916 KB. Duas descobertas cortaram 82%:
+>
+> 1. **Inter é variable font.** Pedir os quatro pesos separadamente traz o *mesmo arquivo*
+>    quatro vezes (confirmado por `md5sum`: quatro hashes idênticos). `wght@400..700`
+>    devolve um arquivo por subset, com toda a faixa de pesos.
+> 2. **`icon_names=` subseta o Material Symbols.** A família completa tem 363 KB para
+>    ~3.000 glifos; pedindo os sete que o `<Sym>` usa, são **2,3 KB**.
+>
+> Só os subsets `latin` e `latin-ext` — português não usa cirílico, grego nem vietnamita.
+> Os `unicode-range` são preservados: sem eles o navegador baixaria os dois arquivos
+> sempre, em vez de escolher.
+>
+> O `@font-face` ficou em `fontes.css` e não em `base.css` como o plano previa: o bloco é
+> longo e mecânico, e `base.css` (MVP-042) é onde moram decisões de design. Separar evita
+> as duas tasks disputando o mesmo arquivo.
+>
+> **O que o offline quebrava era pior do que tipografia.** Sem rede, texto cai para a fonte
+> do sistema — tolerável. Mas Material Symbols funciona por *ligadura*: os botões das
+> trilhas ficariam sem `stethoscope`, `shield` e `female`, e o de pânico sem `emergency`.
+> Ícone ausente numa tela de socorro é um botão que ninguém identifica.
+>
+> `index.html` ganhou `preload` das três fontes da primeira tela — sem isso os ícones
+> chegam depois do primeiro paint e os botões piscam vazios.
+>
+> Nota: o domínio do CDN não aparece em comentário nenhum, de propósito. A validação desta
+> task é um `grep` por ele; um comentário que o citasse tornaria o grep inútil como
+> verificação.
 
 ### MVP-042 — `tokens.css` e `base.css`
 - **Descrição:** Portar literalmente os tokens do POTO (PLAN.md §6).
