@@ -176,3 +176,31 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Panic (MVP-046) ------------------------------------------------------ */
+
+@media (hover: hover) {
+  .poto-panic:hover:not(:disabled) {
+    background: var(--rust-d);
+  }
+}
+
+/* A barra acompanha a pressão em tempo real, então **não** tem transição: uma
+ * transição faria o preenchimento continuar avançando depois de a pessoa
+ * soltar, e o botão pareceria ter disparado sem ter disparado. */
+.poto-panic-barra {
+  transition: none;
+}
+
+/* Movimento reduzido **não** é tratado aqui, e de propósito.
+ *
+ * O reset global do `base.css` zera durações de transição, o que bastaria para
+ * "desligar a animação" — mas desligar é o resultado errado: sem nenhuma
+ * realimentação, quem segura por 400 ms conclui que o botão está quebrado e
+ * solta. A barra precisa continuar avançando, só em degraus discretos.
+ *
+ * Quantizar exige conhecer o progresso, então a decisão vive no componente
+ * (`useMovimentoReduzido`). Uma tentativa anterior de fazer isso em CSS com
+ * `var(--panic-degrau)` deixava a barra em `scaleX(0)` — invisível, a falha
+ * exata que o degrau existe para evitar.
+ */

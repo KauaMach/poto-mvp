@@ -68,7 +68,7 @@
 | MVP-043 | Componente `<Sym>` (ícones) | F5 | P0 | 041, 042 | ✅ Concluída |
 | MVP-044 | Componentes `<Wordmark>` e `<StatusPill>` | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-045 | Componente `<Choice>` | F5 | P0 | 042, 043 | ✅ Concluída |
-| MVP-046 | Componente `<Panic>` com pressionar-e-segurar | F5 | P0 | 042, 043 | Pendente |
+| MVP-046 | Componente `<Panic>` com pressionar-e-segurar | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-047 | Componente `<Confirm>` | F5 | P0 | 042, 043 | Pendente |
 | MVP-048 | Cliente de API tipado | F6 | P0 | 010, 030 | Pendente |
 | MVP-049 | Shell do totem (header/main/footer) | F6 | P0 | 044 | Pendente |
@@ -1455,8 +1455,9 @@
   virtual (não físico), precisa de intenção deliberada: **segurar por 1 s**. Um botão de
   toque simples numa tela pública dispara com um roçar de mão, e cada disparo faz broadcast
   real para CSV e Sala Lilás.
-- **Prioridade:** P0 · **Depende de:** 042, 043 · **Status:** Pendente
-- **Arquivos:** `frontend/src/componentes/Panic.tsx`
+- **Prioridade:** P0 · **Depende de:** 042, 043 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/componentes/Panic.tsx`,
+  `frontend/src/comum/useMovimentoReduzido.ts`, `frontend/src/estilos/base.css`
 - **Critérios de aceitação — visual:**
   - Largura total, cápsula (`--r-pill`), fundo `--rust`, texto branco
   - `min-height: 64px`, Michroma 14px UPPERCASE `letter-spacing: .1em`
@@ -1472,7 +1473,43 @@
   - `prefers-reduced-motion`: o anel vira degraus discretos em vez de animação contínua
   - **Não** abre tela de confirmação — nada que exija decisão na emergência
 - **Como validar:** segurar 1 s e ver o chamado; tocar rapidamente 5× seguidas e confirmar
-  que **nenhum** chamado foi criado
+  que **nenhum** chamado foi criado — pela galeria de componentes (MVP-047)
+
+> **Esforço físico em vez de decisão cognitiva.** O desenho alternativo — uma tela de "tem
+> certeza?" — seria pior: ela pede uma decisão de quem está em pânico. Segurar é algo que o
+> corpo faz; confirmar é algo que a cabeça faz, e a cabeça é justamente o que está ocupado.
+> Daí também o critério de **não** abrir tela de confirmação.
+>
+> **A barra de progresso não é enfeite.** Sem realimentação, quem segura 400 ms e não vê
+> nada concluir que o botão não funciona — e solta. É o que torna o requisito de 1 s
+> viável.
+>
+> `scaleX` em vez de `width`: transforma na GPU e não provoca relayout a cada 16 ms. E a
+> barra **não tem transição**, de propósito — uma transição faria o preenchimento continuar
+> avançando depois de a pessoa soltar, e o botão pareceria ter disparado sem ter.
+>
+> **Erro corrigido durante a implementação.** A primeira versão tratava
+> `prefers-reduced-motion` em CSS, com `transform: scaleX(var(--panic-degrau))` — e eu
+> nunca definia a variável. A barra ficaria em `scaleX(0)`, ou seja **invisível**: a falha
+> exata que o degrau existe para evitar. Quantizar exige conhecer o progresso, então a
+> decisão passou para o componente (`useMovimentoReduzido`, quatro degraus de 25%).
+> Desligar a animação não serve; ela precisa continuar avançando, só em saltos.
+>
+> `pointercancel` é tratado porque é o que dispara quando o sistema toma o gesto — uma
+> notificação chegando, o navegador decidindo que é rolagem. Sem ele o botão ficaria preso
+> em "pressionando" para sempre. `onPointerLeave` cobre o dedo escorregando para fora, e
+> `onBlur` o foco saindo no meio de uma pressão por teclado.
+>
+> `acionar` fica num `ref` atualizado a cada render: sem isso, um `onAcionar` recriado pelo
+> pai entraria nas dependências do `useCallback` e **cancelaria a pressão em curso**.
+>
+> `limpar()` roda **antes** de `acionar()`: se o callback levantar, o botão não pode ficar
+> preso em "pressionando" com um timer rodando. E o `useEffect` de desmontagem existe
+> porque a tela troca ao acionar qualquer trilha — o timer precisa morrer com o componente.
+>
+> `navigator.vibrate` vai dentro de `try` e com `?.`: a API não existe em iOS nem em
+> desktop, e alguns navegadores lançam se chamada sem gesto do usuário. Vibração é conforto,
+> não requisito.
 
 ### MVP-047 — Componente `<Confirm>`
 - **Descrição:** Tela de confirmação nas três variantes: neutra, padrão e crítica.
