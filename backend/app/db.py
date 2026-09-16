@@ -284,6 +284,39 @@ def listar_chamados(
     return [dict(x) for x in linhas]
 
 
+ESCALONAVEIS = (StatusChamado.notificado, StatusChamado.falha_notificacao)
+
+
+def pendentes_de_ack() -> list[dict]:
+    """Chamados que ninguém reconheceu e que ainda podem escalonar (MVP-038).
+
+    Dois status, e o segundo é uma extensão deliberada do critério, que fala só
+    de `notificado`:
+
+    - `notificado` — alguém foi avisado e não respondeu;
+    - `falha_notificacao` — **ninguém foi avisado**, porque o canal falhou.
+
+    Deixar o segundo fora faria o pior caso receber menos atenção que o normal:
+    um chamado sobre o qual nenhuma mensagem saiu ficaria esperando para sempre.
+    O princípio em `config.SLA_SEGUNDOS` é o oposto — o silêncio humano nunca
+    arquiva um chamado.
+
+    `alerta_ativo` **não** entra: é persistente por decisão de projeto, e mudar
+    seu status seria rebaixar o alerta que mantém o cronômetro do totem correndo.
+
+    Ordena por `id` ASC: o mais antigo é o que está esperando há mais tempo.
+    """
+    marcadores = ",".join("?" * len(ESCALONAVEIS))
+    with conectar() as con:
+        linhas = con.execute(
+            f"""SELECT * FROM chamados
+                WHERE status IN ({marcadores}) AND acked_at IS NULL
+                ORDER BY id""",
+            tuple(str(s) for s in ESCALONAVEIS),
+        ).fetchall()
+    return [dict(x) for x in linhas]
+
+
 def atualizar_chamado(
     chamado_id: str,
     *,

@@ -43,6 +43,7 @@ def health() -> dict:
     triagem = _triagem()
     notificacao = _notificacao()
     frontend = _frontend()
+    seguranca = _seguranca()
     banco = _banco_responde()
 
     return {
@@ -51,7 +52,8 @@ def health() -> dict:
         "triagem": triagem,
         "notificacao": notificacao,
         "frontend": frontend,
-        "avisos": _avisos(banco, triagem, notificacao, frontend),
+        "seguranca": seguranca,
+        "avisos": _avisos(banco, triagem, notificacao, frontend, seguranca),
     }
 
 
@@ -109,7 +111,22 @@ def _frontend() -> dict:
     }
 
 
-def _avisos(banco: bool, triagem: dict, notificacao: dict, frontend: dict) -> list[str]:
+def _seguranca() -> dict:
+    """Se o painel está protegido. **Nunca o token em si.**
+
+    Um diagnóstico que devolvesse a credencial para provar que ela existe seria
+    a forma mais direta possível de vazá-la.
+    """
+    return {"painel_protegido": bool(config.PAINEL_TOKEN)}
+
+
+def _avisos(
+    banco: bool,
+    triagem: dict,
+    notificacao: dict,
+    frontend: dict,
+    seguranca: dict,
+) -> list[str]:
     """Tudo que está degradado, em frases que dizem o que fazer.
 
     Lista vazia significa sistema íntegro. É o campo que um humano lê quando
@@ -154,6 +171,15 @@ def _avisos(banco: bool, triagem: dict, notificacao: dict, frontend: dict) -> li
             "desviados para um único destino de teste"
         )
 
+    if not seguranca["painel_protegido"]:
+        # O aviso no log some no scroll. Este campo é onde alguém procura antes
+        # de colocar em operação — é o que impede o modo desenvolvimento de
+        # chegar à produção sem ninguém notar.
+        avisos.append(
+            "POTO_PAINEL_TOKEN vazio: /chamados e /ws estão liberados sem "
+            "credencial, expondo o relato de quem pediu ajuda"
+        )
+
     if not frontend["montado"]:
         avisos.append(
             f"frontend não montado em {frontend['dist']}: a API responde, "
@@ -175,3 +201,59 @@ def _banco_responde() -> bool:
         return True
     except Exception:
         return False
+
+
+# ===========================================================================
+# Constantes para o frontend
+# ===========================================================================
+#
+# Estes dois endpoints existem para matar duplicação. No projeto de referência o
+# frontend repetia prazos de SLA e a lista de canais em constantes próprias, e
+# mudar um prazo exigia alterar dois lugares — o segundo sempre esquecido. Aqui
+# o backend é a fonte única: quem decide o domínio é quem o serve.
+#
+# **São endpoints abertos**, como `/health`: o totem precisa deles antes de
+# qualquer autenticação. Logo, nada de contato institucional passa por aqui.
+
+
+@router.get("/config")
+def configuracao() -> dict:
+    """As constantes de domínio que a interface consome.
+
+    `sla` vem com os prazos por gravidade, `orientacao` incluída com valor
+    nulo — que é informação, não ausência dela: diz ao painel que aquele nível
+    **não** escalona, em vez de deixá-lo inferir por omissão.
+    """
+    return {
+        "sla": dict(config.SLA_SEGUNDOS),
+        "canais_estado": _canais([*config.CANAIS_ESTADO]),
+        "totem_offline_seg": config.TOTEM_OFFLINE_SEG,
+    }
+
+
+@router.get("/canais")
+def catalogo() -> list[dict]:
+    """O catálogo de canais com nomes legíveis.
+
+    **Sem `contato`.** A tabela de rotas em ARCHITECTURE.md §6 previa
+    `{nome, contato}`, mas este endpoint é de sistema e não exige credencial:
+    devolver o telefone aqui entregaria os contatos institucionais de toda a
+    universidade a qualquer um que alcance a API. O `config.py` já tinha tomado
+    essa decisão do outro lado — `CANAIS` guarda só `nome` justamente para que
+    um `return CANAIS` descuidado não pudesse vazar nada.
+
+    Quem precisa do destino é o roteamento, por `config.contato_canal()`, e ele
+    aparece mascarado no detalhe do chamado (MVP-032).
+    """
+    return _canais(list(config.CANAIS))
+
+
+def _canais(chaves: list[str]) -> list[dict]:
+    """Lista em vez de dicionário: a **ordem** é significativa.
+
+    `CANAIS_ESTADO` está na ordem em que os botões de escalonamento aparecem na
+    tela de alerta ativo. Num objeto JSON essa ordem não é garantida pelo
+    contrato, e o frontend teria que reordenar — duplicando a decisão que este
+    endpoint existe para centralizar.
+    """
+    return [{"canal": canal, "nome": config.nome_canal(canal)} for canal in chaves]

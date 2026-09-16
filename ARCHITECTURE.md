@@ -547,7 +547,13 @@ Regras que o desenho impõe:
 |---|---|---|---|
 | `GET` | `/health` | Diagnóstico **honesto** | `{status, triagem: {modo, classificador_carregado}, notificacao, banco, midia: {camera, microfone}}` |
 | `GET` | `/config` | Constantes que o front precisa | `{sla, canais, canais_estado, totem_offline_seg}` |
-| `GET` | `/canais` | Catálogo de canais | `{canal: {nome, contato}}` |
+| `GET` | `/canais` | Catálogo de canais | `[{canal, nome}]` — **sem contato** |
+
+> **`/canais` não expõe contato.** A versão anterior desta tabela previa
+> `{nome, contato}`. Corrigido na MVP-037: é um endpoint de sistema, sem credencial — o
+> totem o consulta antes de qualquer autenticação — e devolver o telefone ali entregaria
+> os contatos institucionais de toda a universidade a quem alcançasse a API. Quem resolve
+> destino é `config.contato_canal()`, e ele aparece **mascarado** no detalhe do chamado.
 
 > **`/health` não mente.** No projeto antigo ele reportava `modo: "agentes"` mesmo sem
 > classificador e sem LLM — só a heurística rodava, e não havia como perceber. Aqui

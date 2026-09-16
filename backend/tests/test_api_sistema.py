@@ -40,6 +40,7 @@ def ambiente(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "NOTIF_WEBHOOK_URL", "")
     monkeypatch.setattr(config, "CONTACT_OVERRIDE", "")
     monkeypatch.setattr(config, "_CONTATOS", {"csv": "5586999990001"})
+    monkeypatch.setattr(config, "PAINEL_TOKEN", "token-de-teste")
 
 
 @pytest.fixture
@@ -333,5 +334,137 @@ def test_formato_da_resposta(cliente):
         "triagem",
         "notificacao",
         "frontend",
+        "seguranca",
         "avisos",
     }
+
+
+# ===========================================================================
+# Proteção do painel (MVP-040)
+# ===========================================================================
+
+
+def test_painel_protegido_e_reportado(cliente):
+    assert saude(cliente)["seguranca"]["painel_protegido"] is True
+
+
+def test_painel_aberto_gera_aviso(cliente, monkeypatch):
+    """O modo desenvolvimento não pode chegar à produção em silêncio: as rotas
+    liberadas são as que carregam o relato de quem pediu ajuda."""
+    monkeypatch.setattr(config, "PAINEL_TOKEN", "")
+
+    dados = saude(cliente)
+
+    assert dados["seguranca"]["painel_protegido"] is False
+    assert any("PAINEL_TOKEN" in a for a in dados["avisos"])
+
+
+def test_token_do_painel_nunca_aparece(cliente, monkeypatch):
+    """Um diagnóstico que devolvesse a credencial para provar que ela existe
+    seria a forma mais direta possível de vazá-la."""
+    monkeypatch.setattr(config, "PAINEL_TOKEN", "segredo-do-painel-abc123")
+
+    assert "segredo-do-painel-abc123" not in cliente.get(ROTA).text
+
+
+# ===========================================================================
+# MVP-037 — /config e /canais
+# ===========================================================================
+#
+# Estes endpoints existem para matar duplicação: no projeto de referência o
+# frontend repetia prazos de SLA e a lista de canais em constantes próprias, e
+# mudar um prazo exigia alterar dois lugares — o segundo sempre esquecido.
+
+CONFIG = "/api/v1/config"
+CANAIS = "/api/v1/canais"
+
+
+def test_config_traz_os_prazos_de_sla(cliente):
+    sla = cliente.get(CONFIG).json()["sla"]
+    assert sla["risco_imediato"] == config.SLA_SEGUNDOS["risco_imediato"]
+    assert sla["risco_potencial"] == config.SLA_SEGUNDOS["risco_potencial"]
+
+
+def test_orientacao_vem_com_prazo_nulo(cliente):
+    """`null` aqui é informação, não ausência dela: diz ao painel que aquele
+    nível **não** escalona, em vez de deixá-lo inferir por omissão."""
+    sla = cliente.get(CONFIG).json()["sla"]
+    assert "orientacao" in sla
+    assert sla["orientacao"] is None
+
+
+def test_config_traz_os_canais_de_escalonamento(cliente):
+    canais = cliente.get(CONFIG).json()["canais_estado"]
+    assert [c["canal"] for c in canais] == config.CANAIS_ESTADO
+
+
+def test_ordem_dos_canais_de_escalonamento_e_preservada(cliente):
+    """Lista e não dicionário: a ordem é a dos botões na tela de alerta ativo.
+    Num objeto JSON ela não é garantida pelo contrato, e o frontend teria que
+    reordenar — duplicando a decisão que este endpoint centraliza."""
+    canais = cliente.get(CONFIG).json()["canais_estado"]
+    assert [c["canal"] for c in canais][0] == "pm_190"
+    assert isinstance(canais, list)
+
+
+def test_config_traz_o_intervalo_de_dreno(cliente):
+    assert cliente.get(CONFIG).json()["totem_offline_seg"] == config.TOTEM_OFFLINE_SEG
+
+
+def test_config_reflete_a_configuracao(cliente, monkeypatch):
+    """Lido na hora, não congelado na subida: é o que permite ajustar o prazo
+    sem reconstruir o frontend."""
+    monkeypatch.setattr(config, "TOTEM_OFFLINE_SEG", 45)
+    assert cliente.get(CONFIG).json()["totem_offline_seg"] == 45
+
+
+def test_formato_do_config(cliente):
+    assert set(cliente.get(CONFIG).json()) == {
+        "sla",
+        "canais_estado",
+        "totem_offline_seg",
+    }
+
+
+def test_canais_traz_o_catalogo_completo(cliente):
+    catalogo = cliente.get(CANAIS).json()
+    assert {c["canal"] for c in catalogo} == set(config.CANAIS)
+
+
+def test_canais_traz_nomes_legiveis(cliente):
+    """"csv" é vocabulário do código; quem lê na tela é uma pessoa."""
+    catalogo = {c["canal"]: c["nome"] for c in cliente.get(CANAIS).json()}
+    assert catalogo["csv"] == "CSV / PREUNI"
+    assert catalogo["sala_lilas"] == "Sala Lilás"
+
+
+def test_canais_nao_expoe_contato(cliente, monkeypatch):
+    """**A correção ao plano.** A tabela de rotas em ARCHITECTURE.md §6 previa
+    `{nome, contato}`, mas este endpoint é de sistema e não exige credencial:
+    devolver o telefone aqui entregaria os contatos institucionais de toda a
+    universidade a qualquer um que alcance a API.
+
+    O `config.py` já tinha tomado a decisão do outro lado — `CANAIS` guarda só
+    `nome` justamente para que um `return CANAIS` descuidado não vazasse nada.
+    """
+    monkeypatch.setattr(config, "_CONTATOS", {"csv": "5586999990001"})
+
+    resposta = cliente.get(CANAIS)
+
+    assert all(set(c) == {"canal", "nome"} for c in resposta.json())
+    assert "5586999990001" not in resposta.text
+    assert "contato" not in resposta.text
+
+
+def test_config_nao_expoe_contato(cliente, monkeypatch):
+    monkeypatch.setattr(config, "_CONTATOS", {"pm_190": "190555"})
+    assert "190555" not in cliente.get(CONFIG).text
+
+
+def test_canais_e_config_concordam_sobre_os_nomes(cliente):
+    """Duas rotas, uma fonte. Se divergissem, o painel mostraria um nome na
+    lista e outro no botão de escalonamento."""
+    catalogo = {c["canal"]: c["nome"] for c in cliente.get(CANAIS).json()}
+    estado = cliente.get(CONFIG).json()["canais_estado"]
+
+    assert all(catalogo[c["canal"]] == c["nome"] for c in estado)

@@ -12,7 +12,8 @@ CORS nem endpoint para configurar no cliente.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -21,7 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import config, db
+from . import config, db, sla
 from .api import chamados, eventos, sistema
 
 API = "/api/v1"
@@ -34,10 +35,22 @@ async def lifespan(app: FastAPI):
     `init_db()` é idempotente, então rodar a cada start é seguro e garante que
     um banco apagado (ou uma Pi com cartão novo) se reconstrua sozinho.
 
-    O worker de SLA será iniciado aqui na MVP-038 — ele ainda não existe.
+    O worker de SLA sobe aqui e é **cancelado no encerramento**. Sem o cancel,
+    um `reload` em desenvolvimento deixaria workers acumulados varrendo o mesmo
+    banco, e o encerramento do serviço travaria esperando uma tarefa que nunca
+    termina.
     """
     db.init_db()
-    yield
+    worker = asyncio.create_task(sla.loop())
+    try:
+        yield
+    finally:
+        worker.cancel()
+        # `suppress` porque o cancelamento é o caminho normal de saída: o laço
+        # relança `CancelledError` de propósito, para que o cancel de fato
+        # aconteça em vez de ser engolido.
+        with suppress(asyncio.CancelledError):
+            await worker
 
 
 def criar_app() -> FastAPI:
@@ -62,6 +75,7 @@ def criar_app() -> FastAPI:
     app.include_router(sistema.router, prefix=API)
     app.include_router(eventos.router, prefix=API)
     app.include_router(chamados.router, prefix=API)
+    app.include_router(chamados.router_ws, prefix=API)
 
     _montar_frontend(app)
     return app

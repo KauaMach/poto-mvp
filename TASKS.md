@@ -59,10 +59,10 @@
 | MVP-034 | `POST /chamados/{id}/escalonar` | F4 | P0 | 028, 032 | ✅ Concluída |
 | MVP-035 | `WS /ws` | F4 | P0 | 027 | ✅ Concluída |
 | MVP-036 | `GET /health` honesto | F4 | P0 | 024, 028 | ✅ Concluída |
-| MVP-037 | `GET /config` e `GET /canais` | F4 | P0 | 011 | Pendente |
-| MVP-038 | Worker de SLA e escalonamento | F4 | P0 | 030, 033 | Pendente |
-| MVP-039 | Testes de contrato da API | F4 | P0 | 030–038 | Pendente |
-| MVP-040 | Autenticação por token no painel | F4 | P1 | 032 | Pendente |
+| MVP-037 | `GET /config` e `GET /canais` | F4 | P0 | 011 | ✅ Concluída |
+| MVP-038 | Worker de SLA e escalonamento | F4 | P0 | 030, 033 | ✅ Concluída |
+| MVP-039 | Testes de contrato da API | F4 | P0 | 030–038 | ✅ Concluída |
+| MVP-040 | Autenticação por token no painel | F4 | P1 | 032 | ✅ Concluída |
 | MVP-041 | Fontes auto-hospedadas | F5 | P0 | 003 | Pendente |
 | MVP-042 | `tokens.css` e `base.css` | F5 | P0 | 003 | Pendente |
 | MVP-043 | Componente `<Sym>` (ícones) | F5 | P0 | 041, 042 | Pendente |
@@ -1099,17 +1099,37 @@
 
 ### MVP-037 — `GET /config` e `GET /canais`
 - **Descrição:** Expor ao frontend as constantes que ele não deve duplicar.
-- **Prioridade:** P0 · **Depende de:** 011 · **Status:** Pendente
-- **Arquivos:** `backend/app/api/sistema.py`
+- **Prioridade:** P0 · **Depende de:** 011 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/api/sistema.py`, `backend/app/config.py`,
+  `backend/tests/test_api_sistema.py`
 - **Critérios de aceitação:**
   - `/config` devolve `sla`, `canais_estado`, `totem_offline_seg`
   - `/canais` devolve o catálogo com nomes legíveis
   - **Nenhum valor de SLA ou lista de canais fica hardcoded no frontend**
-- **Como validar:** `grep -rn "120\|600" frontend/src/` não encontra prazos de SLA
+- **Como validar:** `grep -rn "120\|600" frontend/src/` não encontra prazos de SLA —
+  verificado, e 13 testes
+
+> **Correção ao plano.** A tabela de rotas em ARCHITECTURE.md §6 previa `/canais`
+> devolvendo `{nome, contato}`. Mas `/canais` é endpoint de **sistema, sem credencial** —
+> o totem o consulta antes de qualquer autenticação — e devolver o telefone ali entregaria
+> os contatos institucionais de toda a universidade a qualquer um que alcance a API. O
+> `config.py` já havia tomado a decisão do outro lado: `CANAIS` guarda só `nome`
+> justamente para que um `return CANAIS` descuidado não pudesse vazar nada. Implementado
+> sem `contato`, e a tabela foi corrigida.
+>
+> `orientacao` aparece no `sla` com valor **nulo**, não omitida: `null` ali é informação —
+> diz ao painel que aquele nível não escalona, em vez de deixá-lo inferir por omissão.
+>
+> `canais_estado` é **lista**, não objeto: a ordem é a dos botões na tela de alerta ativo.
+> Num objeto JSON a ordem não é garantida pelo contrato, e o frontend teria que reordenar,
+> duplicando a decisão que este endpoint existe para centralizar.
+>
+> Faltava `TOTEM_OFFLINE_SEG` em `config.py`; acrescentado com default 15 s (o intervalo
+> de dreno da MVP-058) e documentado no `.env.example`.
 
 ### MVP-038 — Worker de SLA e escalonamento
 - **Descrição:** Loop que escalona chamados sem ACK no prazo.
-- **Prioridade:** P0 · **Depende de:** 030, 033 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 030, 033 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/app/sla.py`
 - **Critérios de aceitação:**
   - Roda a cada `POTO_SLA_CHECK_INTERVAL` (default 30 s)
@@ -1117,29 +1137,113 @@
   - `orientacao` nunca escalona
   - Escalona **uma única vez** por chamado
   - Exceção no loop não derruba o worker
-- **Como validar:** `uv run pytest tests/test_sla.py` com prazos reduzidos
+- **Como validar:** `uv run pytest tests/test_sla.py` com prazos reduzidos — 41 testes
+- **Arquivos:** `backend/app/sla.py`, `backend/app/db.py`, `backend/app/main.py`,
+  `backend/tests/test_sla.py`
+
+> **Extensão deliberada do critério: `falha_notificacao` também escalona.** O critério
+> fala só de `notificado` — alguém foi avisado e não respondeu. Mas `falha_notificacao`
+> significa que **ninguém** foi avisado, porque o canal falhou. Deixá-lo fora faria o pior
+> caso receber menos atenção que o normal: um chamado sobre o qual nenhuma mensagem saiu
+> ficaria esperando para sempre. O princípio em `config.SLA_SEGUNDOS` é o oposto — o
+> silêncio humano nunca arquiva um chamado.
+>
+> **`alerta_ativo` não entra.** É persistente por decisão de projeto, e mudar seu status
+> rebaixaria o alerta que mantém o cronômetro do totem correndo. O pânico já nasce com
+> broadcast paralelo e escalonamento manual na tela, então tem redundância própria.
+>
+> **O escalonamento de SLA grava `escalonamento=0`.** A coluna significa "uma pessoa
+> decidiu isto" (MVP-034), e o escalonamento automático é o oposto: acontece *porque*
+> nenhuma pessoa agiu. Confundir os dois tornaria "quem decidiu?" — a única pergunta que a
+> coluna existe para responder — insolúvel. O que registra o escalonamento automático é a
+> transição para `escalonado` no `estado_log`.
+>
+> Mede a partir de `created_at`, nunca de `timestamp_local`: um tablet com a hora
+> adiantada faria o chamado nascer "já atrasado"; com a hora atrasada, ele nunca
+> escalonaria. `created_at` ilegível **não** escalona — acionar a PM por não saber
+> interpretar um dado corrompido seria pior que esperar.
+>
+> Chamado sem `fallback` configurado muda de status de todo modo: o prazo estourou e isso
+> é fato. Deixá-lo em `notificado` faria a varredura tentar de novo para sempre e
+> esconderia do painel que o prazo venceu.
+>
+> O laço **dorme antes de varrer**: quando o serviço acabou de subir, nada pode ter
+> estourado prazo ainda. O `lifespan` cancela o worker no encerramento — sem isso um
+> `reload` em desenvolvimento deixaria workers acumulados varrendo o mesmo banco.
+>
+> **Nota de cobertura:** `acked_at IS NULL` na consulta é redundante com a checagem de
+> status no caminho comum, e uma mutação o revelou. Ele importa num cenário real: o
+> operador reabrir um chamado já reconhecido (o `PATCH` da MVP-033 não restringe
+> transições de propósito). Como `acked_at` é gravado uma vez só e nunca reescrito, é ele
+> que garante o critério na leitura mais forte — o escalonamento automático acontece no
+> máximo uma vez na vida de um chamado. Há teste cobrindo isso agora.
 
 ### MVP-039 — Testes de contrato da API
 - **Descrição:** Cobertura ponta a ponta com `TestClient`.
-- **Prioridade:** P0 · **Depende de:** 030–038 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 030–038 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/tests/test_api_*.py`
 - **Critérios de aceitação:**
   - Cada trilha × modo × com/sem texto verifica que a gravidade **nunca cai**
   - Idempotência verificada via HTTP
   - Banco temporário por teste
   - `make test` verde de ponta a ponta
-- **Como validar:** `make test`
+- **Como validar:** `make test` — **1539 testes**
+- **Arquivos:** `backend/tests/test_api_contrato.py` (178 testes), mais
+  `test_api_eventos.py`, `test_api_panico.py`, `test_api_chamados.py`,
+  `test_api_sistema.py`, `test_api_auth.py`, `test_sla.py`
+
+> **A matriz não verifica valores esperados; verifica uma desigualdade.** Para cada uma
+> das 44 combinações trilha × modo × texto, a asserção é que a gravidade final **nunca é
+> menor** que a que o roteador determinístico dá para a trilha escolhida. Uma tabela de
+> valores esperados precisaria ser reescrita a cada ajuste do classificador; a
+> desigualdade vale para sempre, e é exatamente o que o projeto promete.
+>
+> A mesma invariante é cobrada **no banco**, não só na resposta: o painel e o worker de
+> SLA leem de lá, e uma resposta correta com um registro rebaixado faria a central tratar
+> a emergência pela gravidade errada.
+>
+> Este arquivo cobre por HTTP o que `test_regressao_seguranca.py` cobre chamando funções.
+> A diferença importa porque o defeito original do projeto de referência **não estava na
+> lógica de merge** — estava no endpoint, que chamava a lógica certa e depois sobrescrevia
+> o resultado.
 
 ### MVP-040 — Autenticação por token no painel
 - **Descrição:** Fechar a leitura e escrita do painel, mantendo o acionamento aberto.
-- **Prioridade:** P1 · **Depende de:** 032 · **Status:** Pendente
+- **Prioridade:** P1 · **Depende de:** 032 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/app/api/deps.py`
 - **Critérios de aceitação:**
   - `X-POTO-Token` comparado a `POTO_PAINEL_TOKEN`
   - Exigido em `/chamados*`, `/ws`
   - **`/eventos` e `/panico` permanecem abertos** — um totem em pânico não falha por credencial
   - Sem token configurado, loga aviso e libera (modo desenvolvimento)
-- **Como validar:** `curl localhost:8000/api/v1/chamados` → `401`
+- **Como validar:** `curl localhost:8000/api/v1/chamados` → `401` — 31 testes
+- **Arquivos:** `backend/app/api/deps.py`, `backend/app/api/chamados.py`,
+  `backend/app/api/sistema.py`, `backend/tests/test_api_auth.py`
+
+> A dependência fica **no router**, não em cada rota: é o que faz uma rota nova nascer
+> protegida. Esquecer de decorar um endpoint ali expõe o relato de alguém — o default
+> precisa ser fechado.
+>
+> **O `/ws` fica num router separado**, sem a dependência: uma `HTTPException` não tem
+> tradução num handshake de WebSocket, e o cliente receberia um erro sem explicação. A
+> autorização acontece dentro do handshake e recusa com **1008** (violação de política),
+> que é o código que o navegador entrega ao `onclose` e o painel pode exibir. Ela roda
+> **antes** do `hub.connect`: um cliente sem credencial não pode entrar no hub nem por um
+> instante, ou um broadcast concorrente lhe entregaria o relato de um chamado.
+>
+> O navegador não deixa definir cabeçalhos num `new WebSocket()`, então o `/ws` também
+> aceita `?token=`. A troca é consciente: query string aparece em log de acesso, e por isso
+> o cabeçalho tem precedência.
+>
+> `secrets.compare_digest` e não `==`: a comparação ingênua sai no primeiro byte diferente,
+> e a diferença de tempo permite descobrir o token um caractere por vez. É a mesma rede
+> local de onde vem o tablet — e de onde viria quem quisesse ler os relatos.
+>
+> O modo desenvolvimento passou a ser reportado pelo `/health` (`seguranca.painel_protegido`
+> + aviso), não só no log: **o aviso no log some no scroll**, e o `/health` é onde alguém
+> procura antes de colocar em operação. O token em si nunca aparece ali — um diagnóstico
+> que devolvesse a credencial para provar que ela existe seria a forma mais direta possível
+> de vazá-la.
 
 ---
 

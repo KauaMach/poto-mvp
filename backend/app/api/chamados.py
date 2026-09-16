@@ -1,8 +1,9 @@
 """Rotas da central: leitura dos chamados e as ações do operador.
 
 O lado oposto do acionamento. Enquanto `/eventos` e `/panico` são abertos e
-escrevem sozinhos, estas rotas pertencem à central — exigirão `X-POTO-Token`
-(MVP-040).
+escrevem sozinhos, estas rotas pertencem à central e exigem `X-POTO-Token`
+(MVP-040) — a dependência está no router, para que uma rota nova nasça
+protegida.
 
 **É a fronteira mais sensível da API.** O que sai daqui inclui o relato de quem
 pediu ajuda, o histórico de quem foi acionado e a trilha original de cada
@@ -17,7 +18,7 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from .. import canais, config, db
 from ..canais.log import mascarar
@@ -35,10 +36,20 @@ from ..models import (
     TipoOcorrencia,
     para_painel,
 )
+from .deps import autorizar_websocket, exigir_token
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["central"])
+# `dependencies` no router e não em cada rota: é o que faz uma rota nova nascer
+# protegida. Esquecer de decorar um endpoint aqui expõe o relato de alguém — o
+# default precisa ser fechado.
+#
+# O `/ws` fica **fora** deste router, logo abaixo: uma dependência que levanta
+# `HTTPException` não tem tradução num handshake de WebSocket.
+router = APIRouter(tags=["central"], dependencies=[Depends(exigir_token)])
+
+# Sem a dependência de token: a autorização acontece dentro do handshake.
+router_ws = APIRouter(tags=["central"])
 
 
 @router.get("/chamados", response_model=list[ChamadoOut])
@@ -244,7 +255,7 @@ async def escalonar(chamado_id: str, pedido: EscalonamentoIn) -> CanalResultado:
 INTERVALO_PING = 30.0
 
 
-@router.websocket("/ws")
+@router_ws.websocket("/ws")
 async def painel_ao_vivo(websocket: WebSocket) -> None:
     """Mantém o painel em tempo real.
 
@@ -252,6 +263,12 @@ async def painel_ao_vivo(websocket: WebSocket) -> None:
     conexão. Ela não lê nada de útil do cliente — o painel é um consumidor — mas
     **precisa** ficar bloqueada num `receive`: é assim que a desconexão chega.
     """
+    # Antes do `connect`, que é quem aceita o handshake: um cliente sem
+    # credencial não pode entrar no hub nem por um instante, ou um broadcast
+    # concorrente lhe entregaria o relato de um chamado.
+    if not await autorizar_websocket(websocket):
+        return
+
     await hub.connect(websocket)
 
     # O ping em tarefa própria, e não dentro do laço com `wait_for`: cancelar um

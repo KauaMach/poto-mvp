@@ -55,6 +55,12 @@ NOTIF_WEBHOOK_TOKEN = os.getenv("POTO_NOTIF_WEBHOOK_TOKEN", "").strip()
 # --- SLA -------------------------------------------------------------------
 SLA_CHECK_INTERVAL = _int("POTO_SLA_CHECK_INTERVAL", 30)
 
+# Intervalo com que o totem tenta drenar a fila offline (MVP-058). Exposto em
+# `/config` para que o frontend não o duplique: é uma constante de domínio —
+# quanto tempo é aceitável um acionamento ficar retido no aparelho — e não uma
+# preferência de interface.
+TOTEM_OFFLINE_SEG = _int("POTO_TOTEM_OFFLINE_SEG", 15)
+
 # --- Segurança -------------------------------------------------------------
 # Exigido no painel (/chamados*, /ws). Vazio = modo desenvolvimento: libera e
 # registra aviso. Os endpoints de acionamento (/eventos, /panico) NUNCA exigem
