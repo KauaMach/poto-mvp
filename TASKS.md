@@ -80,7 +80,7 @@
 | MVP-055 | Layout fluido: tablet (2 orientações) e desktop | F6 | P0 | 050, 054 | ⚠️ Parcial |
 | MVP-055b | Manifest e modo autônomo no tablet | F6 | P0 | 055 | ✅ Concluída |
 | MVP-056 | Acessibilidade AA | F6 | P1 | 055 | ⚠️ Parcial |
-| MVP-057 | Fila offline em `localStorage` | F7 | P0 | 048 | Pendente |
+| MVP-057 | Fila offline em `localStorage` | F7 | P0 | 048 | ✅ Concluída |
 | MVP-058 | Dreno automático e badge de fila | F7 | P0 | 057 | Pendente |
 | MVP-059 | Re-triagem protetiva no dreno | F7 | P0 | 023, 058 | Pendente |
 | MVP-060 | Shell e lista do painel | F8 | P0 | 032, 042 | Pendente |
@@ -1979,14 +1979,53 @@
 
 ### MVP-057 — Fila offline em `localStorage`
 - **Descrição:** O totem não pode parar porque a rede parou.
-- **Prioridade:** P0 · **Depende de:** 048 · **Status:** Pendente
-- **Arquivos:** `frontend/src/comum/fila.ts`
+- **Prioridade:** P0 · **Depende de:** 048 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/comum/fila.ts`, `frontend/src/totem/Totem.tsx`,
+  `frontend/src/totem/telas/AlertaAtivo.tsx`, `frontend/scripts/verificar-fila.mjs`
 - **Critérios de aceitação:**
   - Falha de POST enfileira o evento **com o `evento_id` já gerado**
   - `enfileirar()`, `pendentes()`, `drenar()`
   - Confirmação **imediata** na tela — a pessoa não percebe diferença
   - `localStorage` cheio ou bloqueado não quebra a aplicação
-- **Como validar:** desligar o backend, acionar 3 trilhas, conferir 3 itens na fila
+- **Como validar:** desligar o backend, acionar 3 trilhas, conferir 3 itens na fila —
+  `npm run check-fila`, **13 casos**
+
+> **A peça que faz a fila funcionar está em outro arquivo.** O `evento_id` nasce no cliente
+> antes do envio (MVP-048), e é por isso que um evento pode falhar, ficar guardado horas e
+> ser reenviado carregando o mesmo id — o backend devolve o chamado que já existe em vez de
+> criar um segundo alarme. Sem essa decisão, a fila **multiplicaria** chamados em vez de
+> salvá-los.
+>
+> O evento é montado **antes** do `try`: montá-lo no `catch` geraria um id novo e quebraria
+> exatamente essa garantia.
+>
+> **`ErroRede` enfileira; `ErroApi` não.** A distinção da MVP-048 ganha consequência aqui:
+> um 422 significa que o envio chegou e foi recusado, e reenfileirar entraria em laço com
+> um payload que vai falhar igual. Sem a distinção, a fila giraria para sempre.
+>
+> **Falha de rede não é falha do acionamento.** A confirmação aparece imediata e a pessoa
+> não fica sabendo que o wi-fi caiu — ela não pode decidir o que fazer a respeito disso.
+>
+> **A `confirmacaoLocal` é a única vez em que o frontend decide o conteúdo de uma tela de
+> confirmação**, e contradiz a regra do projeto de propósito: sem resposta do servidor não
+> existe `instrucao_totem`. Duas salvaguardas contêm a contradição — **sem protocolo**
+> (inventar um `CALL-` local seria pior que não ter: a pessoa anotaria um número que a
+> central não reconhece) e **sem som**, com mensagem genérica, porque sem `tela_neutra` do
+> servidor o cliente não sabe se o caso é discreto, e um beep na trilha errada é tão
+> revelador quanto um protocolo na tela. A função nem recebe o evento, para não ter acesso
+> a nada que possa vazar.
+>
+> Um pânico offline continua sendo um pânico: a tela de alerta ativo aparece igual, sem
+> WebSocket (tentar reconectar em laço numa tela de pânico só aquece o aparelho) e com os
+> quatro números para ligar. Os botões marcam localmente — é o uso real deles quando não há
+> sistema do outro lado: dizer quais números já foram tentados.
+>
+> **O limite de 50 descarta o mais antigo, não o mais novo.** Entre um pedido de dez dias
+> atrás e um de agora, o de agora é o que ainda pode ser atendido.
+>
+> Os três modos de falha de `localStorage` são testados, não presumidos: cota estourada,
+> acesso bloqueado (navegação privada) e conteúdo corrompido — inclusive um item de formato
+> antigo, que é descartado em vez de derrubar a tela ao montar.
 
 ### MVP-058 — Dreno automático e badge de fila
 - **Descrição:** Reenvio ao voltar a conectividade.

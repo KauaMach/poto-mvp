@@ -55,10 +55,12 @@ type Props = {
   alerta: PanicoOut;
   /** Instante do acionamento, para o cronômetro. */
   desde: Date;
+  /** O alerta está na fila: não houve resposta do servidor. */
+  offline?: boolean;
   onVoltar: () => void;
 };
 
-export function AlertaAtivo({ alerta, desde, onVoltar }: Props) {
+export function AlertaAtivo({ alerta, desde, offline = false, onVoltar }: Props) {
   const [status, setStatus] = useState<StatusChamado>(alerta.status);
   const [acionados, setAcionados] = useState<Record<string, boolean>>({});
   const tempo = useCronometro(desde);
@@ -74,7 +76,9 @@ export function AlertaAtivo({ alerta, desde, onVoltar }: Props) {
     [alerta.chamado_id],
   );
 
-  useEventosWS(aoEvento);
+  /* Offline não há WebSocket para assinar, e tentar reconectar em laço numa
+   * tela de pânico só aquece o aparelho. */
+  useEventosWS(aoEvento, !offline);
 
   const escalonar = useCallback(
     async (canal: CanalOpcao) => {
@@ -82,6 +86,10 @@ export function AlertaAtivo({ alerta, desde, onVoltar }: Props) {
        * registro do acionamento humano é o que importa — e ele acontece no
        * backend mesmo quando o canal não tem contato (MVP-034). */
       setAcionados((a) => ({ ...a, [canal.canal]: true }));
+      /* Offline não há chamado no servidor para anexar o escalonamento. A marca
+       * na tela ainda vale: ela diz à pessoa quais números ela já tentou, que é
+       * o uso real destes botões quando não há sistema do outro lado. */
+      if (offline) return;
       try {
         await escalonarChamado(alerta.chamado_id, canal.canal);
       } catch {
@@ -90,7 +98,7 @@ export function AlertaAtivo({ alerta, desde, onVoltar }: Props) {
          * registra. O painel mostra o resultado real. */
       }
     },
-    [alerta.chamado_id],
+    [alerta.chamado_id, offline],
   );
 
   return (
@@ -99,10 +107,14 @@ export function AlertaAtivo({ alerta, desde, onVoltar }: Props) {
         <Sym nome="emergency" tamanho="xl" cor="#fff" />
       </span>
 
-      <p className="poto-alerta-status">{textoDoStatus(status)}</p>
+      <p className="poto-alerta-status">
+        {offline ? "Sem conexão — alerta guardado" : textoDoStatus(status)}
+      </p>
 
       <div>
-        <p className="poto-alerta-legenda">Protocolo</p>
+        <p className="poto-alerta-legenda">
+          {offline ? "Situação" : "Protocolo"}
+        </p>
         <p className="poto-alerta-protocolo tabular">{alerta.chamado_id}</p>
       </div>
 
@@ -112,7 +124,9 @@ export function AlertaAtivo({ alerta, desde, onVoltar }: Props) {
 
       <div className="poto-alerta-escalonar">
         <p className="poto-alerta-legenda">
-          Se precisar, acione diretamente
+          {offline
+            ? "Sem conexão. Ligue diretamente:"
+            : "Se precisar, acione diretamente"}
         </p>
         <div className="poto-alerta-botoes">
           {alerta.escalonamento_disponivel.map((canal) => (
