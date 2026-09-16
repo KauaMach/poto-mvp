@@ -49,7 +49,7 @@
 | MVP-024 | Fachada `triar()` | F3 | P0 | 023 | ✅ Concluída |
 | MVP-025 | Suíte de regressão de segurança | F3 | P0 | 024 | ✅ Concluída |
 | MVP-026 | App FastAPI + lifespan + estático | F4 | P0 | 004, 014 | ✅ Concluída |
-| MVP-027 | Hub de WebSocket | F4 | P0 | 026 | Pendente |
+| MVP-027 | Hub de WebSocket | F4 | P0 | 026 | ✅ Concluída |
 | MVP-028 | Registry de canais + provider `log` | F4 | P0 | 011 | Pendente |
 | MVP-029 | Provider `webhook` | F4 | P0 | 028 | Pendente |
 | MVP-030 | `POST /eventos` | F4 | P0 | 024, 027, 028 | Pendente |
@@ -683,13 +683,30 @@
 
 ### MVP-027 — Hub de WebSocket
 - **Descrição:** Gerenciar conexões do painel e transmitir eventos.
-- **Prioridade:** P0 · **Depende de:** 026 · **Status:** Pendente
-- **Arquivos:** `backend/app/hub.py`
+- **Prioridade:** P0 · **Depende de:** 026 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/app/hub.py`, `backend/tests/test_hub.py`
 - **Critérios de aceitação:**
   - `connect`, `disconnect`, `broadcast(evento, dados)`
   - Cliente que falha no envio é removido do conjunto — sem vazar conexão morta
   - `broadcast` sem clientes conectados não levanta exceção
-- **Como validar:** `uv run pytest tests/test_hub.py`
+- **Como validar:** `uv run pytest tests/test_hub.py` — 25 testes
+
+> **"Conexão morta" tem duas formas, e só uma delas levanta exceção.** O critério cobre
+> a óbvia: o socket estoura no envio e o cliente sai do conjunto. A outra é o tablet que
+> dormiu com a conexão aberta — o envio não falha, ele simplesmente **nunca completa**.
+> Esse cliente nunca seria removido, e pior: como os envios são paralelos e o broadcast
+> espera por todos, ele prenderia o `POST /eventos` que estava registrando a emergência.
+> Daí o `TIMEOUT_ENVIO` de 2 s, que converte travamento em falha e devolve o caso ao
+> caminho já coberto pelo critério.
+>
+> As duas defesas são complementares e nenhuma basta sozinha: o envio paralelo evita que
+> um cliente lento atrase os demais, o prazo evita que um cliente travado prenda todos.
+>
+> Verificado por mutação, como a suíte de segurança: cinco defeitos reintroduzidos
+> (sem prazo, iterar o conjunto vivo em vez de uma cópia, não remover quem falhou,
+> `remove()` no lugar de `discard()`, `gather` sem `return_exceptions`) — todos pegos.
+> O teste do cliente travado usa um `wait_for` externo de propósito: sem ele, a ausência
+> do prazo **penduraria a suíte** em vez de reprovar.
 
 ### MVP-028 — Registry de canais + provider `log`
 - **Descrição:** Arquitetura plugável de notificação, com payload mínimo por LGPD.
