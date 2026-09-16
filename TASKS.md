@@ -28,8 +28,8 @@
 | MVP-003 | Scaffold do frontend (React + Vite + TS) | F1 | P0 | 001 | ✅ Concluída |
 | MVP-004 | `.env.example` e carregamento de config | F1 | P0 | 002 | ✅ Concluída |
 | MVP-005 | `.gitignore` | F1 | P0 | 001 | ✅ Concluída |
-| MVP-006 | Lint e formatação (ruff + eslint) | F1 | P1 | 002, 003 | Pendente |
-| MVP-007 | Makefile com alvos de desenvolvimento | F1 | P0 | 002, 003 | Pendente |
+| MVP-006 | Lint e formatação (ruff + oxlint) | F1 | P1 | 002, 003 | ✅ Concluída |
+| MVP-007 | Makefile com alvos de desenvolvimento | F1 | P0 | 002, 003 | ✅ Concluída |
 | MVP-008 | Commit inicial e push | F1 | P0 | 001–007 | Pendente |
 | MVP-009 | Enums do domínio | F2 | P0 | 002 | Pendente |
 | MVP-010 | Contratos Pydantic de entrada e saída | F2 | P0 | 009 | Pendente |
@@ -190,15 +190,15 @@
 - **Como validar:** `make setup && git status --short` não lista nenhum artefato gerado
 
 ### MVP-006 — Lint e formatação
-- **Descrição:** Configurar ruff no backend e eslint + prettier no frontend.
-- **Prioridade:** P1 · **Depende de:** 002, 003 · **Status:** Pendente
-- **Arquivos:** `backend/pyproject.toml` (`[tool.ruff]`), `frontend/.eslintrc.cjs`
+- **Descrição:** Configurar ruff no backend e oxlint no frontend (o scaffold do Vite já traz oxlint; eslint seria uma dependência a mais pelo mesmo resultado).
+- **Prioridade:** P1 · **Depende de:** 002, 003 · **Status:** ✅ Concluída
+- **Arquivos:** `backend/pyproject.toml` (`[tool.ruff]`), `frontend/.oxlintrc.json`
 - **Critérios de aceitação:** `make lint` roda ambos e sai com código 0 num projeto limpo
 - **Como validar:** `make lint`
 
 ### MVP-007 — Makefile com alvos de desenvolvimento
 - **Descrição:** Centralizar os comandos do projeto num Makefile autodocumentado.
-- **Prioridade:** P0 · **Depende de:** 002, 003 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 002, 003 · **Status:** ✅ Concluída
 - **Arquivos:** `Makefile`
 - **Critérios de aceitação:**
   - Alvos: `setup`, `dev`, `backend`, `frontend`, `build`, `test`, `lint`, `train-clf`, `seed`, `demo-reset`, `clean`

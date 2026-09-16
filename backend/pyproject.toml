@@ -49,6 +49,14 @@ package = false
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+# Base enxuta e útil, sem virar burocracia:
+#   E,F  pycodestyle + pyflakes (o padrão)
+#   I    ordenação de imports
+#   UP   sintaxe moderna de Python
+#   B    bugbear — armadilhas comuns (mutável como default, etc.)
+select = ["E", "F", "I", "UP", "B"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
