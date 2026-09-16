@@ -6,6 +6,7 @@
 
 @import "./fontes.css";
 @import "./tokens.css";
+@import "./totem.css";
 
 /* `border-box` em tudo: com `content-box`, `min-height: 168px` no `.choice`
  * (MVP-045) mediria só o conteúdo e o cartão sairia 56px maior que a

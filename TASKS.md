@@ -71,7 +71,7 @@
 | MVP-046 | Componente `<Panic>` com pressionar-e-segurar | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-047 | Componente `<Confirm>` | F5 | P0 | 042, 043 | ✅ Concluída |
 | MVP-048 | Cliente de API tipado | F6 | P0 | 010, 030 | ✅ Concluída |
-| MVP-049 | Shell do totem (header/main/footer) | F6 | P0 | 044 | Pendente |
+| MVP-049 | Shell do totem (header/main/footer) | F6 | P0 | 044 | ✅ Concluída |
 | MVP-050 | Tela inicial com as 4 trilhas | F6 | P0 | 045, 046, 049 | Pendente |
 | MVP-051 | Fluxo de acionamento e confirmação | F6 | P0 | 047, 048, 050 | Pendente |
 | MVP-052 | Retorno automático à tela inicial | F6 | P0 | 051 | Pendente |
@@ -1602,15 +1602,41 @@
 
 ### MVP-049 — Shell do totem
 - **Descrição:** As três zonas de DESIGN.md §12: header, main centralizado, footer.
-- **Prioridade:** P0 · **Depende de:** 044 · **Status:** Pendente
-- **Arquivos:** `frontend/src/totem/Totem.tsx`
+- **Prioridade:** P0 · **Depende de:** 044 · **Status:** ✅ Concluída
+- **Arquivos:** `frontend/src/totem/Shell.tsx`, `frontend/src/estilos/totem.css`
 - **Critérios de aceitação:**
   - `max-width: 960px`, `padding: clamp(20px, 4vw, 48px)`, `min-height: 100dvh`
   - Header: wordmark à esquerda, status à direita
   - Main: `flex: 1`, centralizado vertical e horizontalmente
   - Footer: `margin-top: auto`
   - `overflow: hidden` e `user-select: none` (kiosk)
-- **Como validar:** abrir em 1280×800 sem barra de rolagem
+- **Como validar:** abrir em 1280×800 sem barra de rolagem — a verificação nas quatro
+  resoluções é o critério da MVP-055, que mede no aparelho real
+
+> Ficou em `Shell.tsx` e não em `Totem.tsx` como o plano previa: `Totem.tsx` é o contêiner
+> de **fluxo** (MVP-051), e misturar layout com máquina de estados tornaria os dois piores
+> de ler. O shell é puramente apresentação e recebe tudo por prop.
+>
+> **`100dvh` e não `100vh`.** No Chrome do Android a barra de endereço entra e sai, e
+> `100vh` mede a altura *sem* ela — o rodapé ficaria abaixo da borda visível justamente
+> enquanto a barra está presente, que é o estado inicial antes de a pessoa rolar (e num
+> kiosk ela nunca rola).
+>
+> **`overflow: hidden` é uma afirmação, não uma proteção.** Se o conteúdo não cabe, o
+> layout está errado e precisa ser corrigido (MVP-055); esconder com rolagem mascararia o
+> problema, e num totem ninguém descobre que precisa rolar.
+>
+> Três `min-height: 0` que não estão no critério e sem os quais o rodapé é cortado em
+> paisagem: um filho de flex container não encolhe abaixo do seu conteúdo por default, e
+> combinado com o `overflow: hidden` do shell isso empurra o footer para fora da área
+> visível. É exatamente o caso difícil que a MVP-055 nomeia — ~530px de altura útil na
+> paisagem do Tab A11.
+>
+> O CSS ficou em `totem.css` separado do `base.css`: o painel da central tem tabela longa e
+> **precisa** rolar, e não pode herdar `overflow: hidden`.
+>
+> `fundo` e `semCromo` como props existem para a tela de alerta ativo (MVP-054), que é
+> ferrugem inteira e ocupa a tela sem header nem rodapé.
 
 ### MVP-050 — Tela inicial com as 4 trilhas
 - **Descrição:** "Como podemos ajudar?" com a grade 2×2 e o pânico no rodapé.

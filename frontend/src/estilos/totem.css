@@ -1,0 +1,62 @@
+/* Layout do totem — MVP-049.
+ *
+ * Separado do `base.css` porque estas regras valem só para a tela do totem; o
+ * painel da central tem outras necessidades (tabela longa, rolagem) e não deve
+ * herdar `overflow: hidden`.
+ */
+
+.poto-shell {
+  /* `100dvh` em vez de `100vh`: no Chrome do Android a barra de endereço entra
+   * e sai, e `100vh` mede a altura *sem* ela — o rodapé ficaria abaixo da
+   * borda visível enquanto a barra estivesse presente. */
+  min-height: 100dvh;
+  background: var(--paper);
+  /* Kiosk: nada rola. Se o conteúdo não cabe, o layout está errado e precisa
+   * ser corrigido (MVP-055) — esconder com rolagem mascararia o problema, e
+   * num totem ninguém descobre que precisa rolar. */
+  overflow: hidden;
+  display: flex;
+}
+
+.poto-shell-interno {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  /* `clamp` para escalar do tablet de 8,7" ao desktop sem ponto de quebra. */
+  padding: clamp(20px, 4vw, 48px);
+  display: flex;
+  flex-direction: column;
+  /* O filho de um flex container não encolhe abaixo do conteúdo por default, e
+   * é o que faria o `overflow: hidden` do pai cortar o rodapé em telas baixas. */
+  min-height: 0;
+}
+
+.poto-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  /* Não encolhe: o status de conectividade é a última coisa que deve sumir
+   * quando falta altura. */
+  flex: 0 0 auto;
+}
+
+.poto-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(var(--space-lg), 4vh, var(--space-xxl));
+  /* Sem isto o conteúdo do main não pode encolher e empurra o rodapé para
+   * fora da área visível em paisagem. */
+  min-height: 0;
+  width: 100%;
+}
+
+.poto-footer {
+  margin-top: auto;
+  padding-top: clamp(var(--space-md), 3vh, var(--space-xl));
+  flex: 0 0 auto;
+  width: 100%;
+}
