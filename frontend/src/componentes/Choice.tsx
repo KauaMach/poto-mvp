@@ -22,6 +22,14 @@ type Props = {
   variante?: "padrao" | "muted";
   /** Desabilita durante um envio em curso, para não gerar dois chamados. */
   desabilitado?: boolean;
+  /** Complemento lido por leitor de tela, anexado **depois** do rótulo.
+   *
+   * O nome acessível final é `"<rotulo> — <descricao>"`, e a ordem importa: a
+   * WCAG 2.5.3 (Label in Name) exige que o texto visível esteja contido no nome
+   * acessível, senão o controle por voz deixa de funcionar — dizer "Segurança"
+   * não acionaria um botão cujo nome fosse "Acionar atendimento de segurança".
+   */
+  descricao?: string;
 };
 
 const ESTILO: CSSProperties = {
@@ -66,6 +74,7 @@ export function Choice({
   onClick,
   variante = "padrao",
   desabilitado = false,
+  descricao,
 }: Props) {
   const cor = variante === "muted" ? "var(--muted)" : "var(--rust)";
 
@@ -74,6 +83,7 @@ export function Choice({
       type="button"
       onClick={onClick}
       disabled={desabilitado}
+      aria-label={descricao ? `${rotulo} — ${descricao}` : undefined}
       className="poto-choice"
       style={{ ...ESTILO, opacity: desabilitado ? 0.5 : 1 }}
     >

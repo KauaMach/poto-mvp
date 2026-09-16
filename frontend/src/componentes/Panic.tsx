@@ -128,6 +128,9 @@ export function Panic({ onAcionar, desabilitado = false }: Props) {
         if (e.key === "Enter" || e.key === " ") cancelar();
       }}
       onBlur={cancelar}
+      /* Contém "Pânico", o texto visível (WCAG 2.5.3). O complemento diz o
+       * que o botão exige — segurar — porque isso não é descobrível sem tentar. */
+      aria-label="Pânico — segure por 1 segundo para acionar"
       aria-describedby="poto-panic-ajuda"
       style={{
         position: "relative",

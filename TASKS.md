@@ -79,7 +79,7 @@
 | MVP-054 | Tela de alerta ativo (pânico) | F6 | P0 | 031, 051 | ✅ Concluída |
 | MVP-055 | Layout fluido: tablet (2 orientações) e desktop | F6 | P0 | 050, 054 | ⚠️ Parcial |
 | MVP-055b | Manifest e modo autônomo no tablet | F6 | P0 | 055 | ✅ Concluída |
-| MVP-056 | Acessibilidade AA | F6 | P1 | 055 | Pendente |
+| MVP-056 | Acessibilidade AA | F6 | P1 | 055 | ⚠️ Parcial |
 | MVP-057 | Fila offline em `localStorage` | F7 | P0 | 048 | Pendente |
 | MVP-058 | Dreno automático e badge de fila | F7 | P0 | 057 | Pendente |
 | MVP-059 | Re-triagem protetiva no dreno | F7 | P0 | 023, 058 | Pendente |
@@ -1933,14 +1933,45 @@
 
 ### MVP-056 — Acessibilidade AA
 - **Descrição:** Contraste, foco e semântica.
-- **Prioridade:** P1 · **Depende de:** 055 · **Status:** Pendente
-- **Arquivos:** `frontend/src/componentes/*`
+- **Prioridade:** P1 · **Depende de:** 055 · **Status:** ⚠️ Parcial — contraste e
+  semântica verificados; **Lighthouse e navegação por teclado pendem de navegador**
+- **Arquivos:** `frontend/src/componentes/{Choice,Panic}.tsx`,
+  `frontend/src/totem/telas/Home.tsx`, `frontend/scripts/verificar-contraste.mjs`
 - **Critérios de aceitação:**
   - Contraste AA em todos os pares de cor
   - `aria-label` nos 4 botões de trilha e no pânico
   - Foco visível em todos os interativos
   - **Cor nunca é o único sinal** — gravidade tem cor + rótulo + ícone
-- **Como validar:** Lighthouse Accessibility ≥ 95 e navegação só por teclado
+- **Como validar:** Lighthouse Accessibility ≥ 95 e navegação só por teclado — **não
+  executados** (exigem navegador). `npm run check-contraste` cobre os 26 pares de cor, e a
+  conformidade com Label in Name foi verificada por renderização
+
+> **O contraste é calculado, não conferido pelo Lighthouse**, por duas razões. O Lighthouse
+> só vê o que está renderizado na rota que abriu: a tela de alerta ativo, as três variantes
+> do `<Confirm>` e o estado desabilitado do `<Choice>` não aparecem numa passada pela tela
+> inicial. E ele dá uma **nota**, não uma lista do que está errado. São 26 pares declarados
+> à mão, porque só quem conhece o design sabe o que é texto (4.5:1), texto grande (3:1) ou
+> apenas borda — um script varrendo o CSS não distinguiria.
+>
+> **Ressalva honesta sobre um dos pares.** A borda `--line` sobre branco dá **1,28:1**, e
+> eu declarei o mínimo dela como 1.1 — que não é um patamar da WCAG. A justificativa é que
+> a 1.4.11 se aplica a limites que **comunicam estado**, e o contorno do cartão é
+> decorativo: quem carrega o significado é o rótulo e o ícone, e hover e foco usam
+> ferrugem (4,52:1 e 5,17:1). Se um dia a borda passar a indicar seleção, esse par vira uma
+> falha de verdade.
+>
+> **`aria-label` que não contém o texto visível quebra o controle por voz.** A WCAG 2.5.3
+> (Label in Name) exige a contenção, e é por isso que o formato é
+> `"<rótulo visível> — <complemento>"` e não uma frase reescrita: dizer "Segurança" tem que
+> acionar o botão "Segurança". Verificado por renderização nos cinco controles.
+>
+> O campo `descricao` de `trilhas.ts` existia desde a MVP-050 e não estava sendo usado —
+> agora alimenta esses rótulos. A grade ganhou `role="group"` com nome, para o leitor de
+> tela anunciar o contexto que o arranjo visual dá.
+>
+> Foco visível vem do `base.css` (`outline: 3px var(--rust)`), com variante branca dentro do
+> alerta ativo — o anel de ferrugem é invisível sobre fundo ferrugem. E cor nunca é o único
+> sinal: o `StatusPill` tem texto ao lado do ponto, e a gravidade tem cor, rótulo e ícone.
 
 ---
 

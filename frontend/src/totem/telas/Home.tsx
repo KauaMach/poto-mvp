@@ -23,13 +23,21 @@ export function Home({ onEscolher, enviando = false }: Props) {
     <>
       <h1 className="poto-titulo">Como podemos ajudar?</h1>
 
-      <div className="poto-grid">
+      {/* `role="group"` com rótulo: o leitor de tela anuncia "grupo, escolha o
+          tipo de atendimento, 4 itens" antes do primeiro botão, o que dá o
+          contexto que a grade visual dá pelo arranjo. */}
+      <div
+        className="poto-grid"
+        role="group"
+        aria-label="Escolha o tipo de atendimento"
+      >
         {TRILHAS.map((trilha) => (
           <Choice
             key={trilha.tipo}
             icone={trilha.icone}
             rotulo={trilha.rotulo}
             variante={trilha.variante}
+            descricao={trilha.descricao}
             desabilitado={enviando}
             onClick={() => onEscolher(trilha)}
           />
