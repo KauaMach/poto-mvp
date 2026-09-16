@@ -34,8 +34,8 @@
 | MVP-009 | Enums do domínio | F2 | P0 | 002 | ✅ Concluída |
 | MVP-010 | Contratos Pydantic de entrada e saída | F2 | P0 | 009 | ✅ Concluída |
 | MVP-011 | Catálogo de canais e config de SLA | F2 | P0 | 004, 009 | ✅ Concluída |
-| MVP-012 | Roteador determinístico | F2 | P0 | 009, 011 | Pendente |
-| MVP-013 | Testes do roteador | F2 | P0 | 012 | Pendente |
+| MVP-012 | Roteador determinístico | F2 | P0 | 009, 011 | ✅ Concluída |
+| MVP-013 | Testes do roteador | F2 | P0 | 012 | ✅ Concluída |
 | MVP-014 | Schema SQLite + WAL + índices | F2 | P0 | 009 | Pendente |
 | MVP-015 | Criação de chamado com idempotência | F2 | P0 | 014 | Pendente |
 | MVP-016 | Consulta e atualização de chamados | F2 | P0 | 015 | Pendente |
@@ -300,7 +300,7 @@
 
 ### MVP-012 — Roteador determinístico
 - **Descrição:** Portar `rotear()` de `../poto/backend/app/router_engine.py`. É a rede de segurança que funciona mesmo se toda a IA falhar.
-- **Prioridade:** P0 · **Depende de:** 009, 011 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 009, 011 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/app/triagem/roteador.py`
 - **Critérios de aceitação:**
   - Assinatura `rotear(tipo, modo, *, emergencia=False, agora=None) -> dict`
@@ -313,7 +313,7 @@
 
 ### MVP-013 — Testes do roteador
 - **Descrição:** Cobrir a matriz completa tipo × modo × horário.
-- **Prioridade:** P0 · **Depende de:** 012 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 012 · **Status:** ✅ Concluída
 - **Arquivos:** `backend/tests/test_roteador.py`
 - **Critérios de aceitação:**
   - Segurança → `csv`, fallback `pm_190`, `risco_imediato`, em qualquer horário
