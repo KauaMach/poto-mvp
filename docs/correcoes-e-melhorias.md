@@ -23,6 +23,7 @@ poderia fazer mais ou melhor)
 | [COR-001](#cor-001--pânico-não-deveria-acionar-a-sala-lilás-automaticamente) | Pânico não deveria acionar a Sala Lilás automaticamente | Correção | Alta | Proposto |
 | [MEL-001](#mel-001--canal-de-vídeo-bidirecional-da-central-para-o-totem) | Canal de vídeo bidirecional da central para o totem | Melhoria | A discutir | Proposto |
 | [MEL-002](#mel-002--pré-requisito-de-mel-001-servir-a-aplicação-por-https) | Pré-requisito de MEL-001: servir a aplicação por HTTPS | Melhoria | A discutir | Proposto |
+| [MEL-003](#mel-003--rota-explícita-totem-em-vez-de-a-raiz-ser-o-totem-por-padrão) | Rota explícita `/totem`, em vez de a raiz ser o totem por padrão | Melhoria | Média | Proposto |
 
 ---
 
@@ -217,6 +218,75 @@ computador, pela rede, usando o IP ou o nome mDNS da Pi).
 
 Nenhuma é trivial, e a escolha aqui **decide o teto do MEL-001**. Vale registrar como
 decisão separada antes de estimar o esforço de MEL-001 inteiro.
+
+---
+
+## MEL-003 — Rota explícita `/totem`, em vez de a raiz ser o totem por padrão
+
+**Tipo:** Melhoria · **Prioridade sugerida:** Média · **Levantado por:** Kaua, 18/09
+
+### Comportamento atual
+
+A interface do totem vive na **raiz** (`http://RaspPoto.local:8000/`), e a central em
+`/painel`. As duas rotas não são simétricas — uma é explícita, a outra é "o que sobra":
+
+```tsx
+// frontend/src/App.tsx — rotaAtual()
+function rotaAtual(): Rota {
+  const caminho = window.location.pathname.replace(/\/+$/, "");
+  if (caminho === "/painel") return "painel";
+  if (caminho === "/galeria" && import.meta.env.DEV) return "galeria";
+  return "totem";  // ← qualquer coisa que não seja /painel nem /galeria
+}
+```
+
+**Consequência que vale registrar:** por causa desse `return "totem"` no fim, a rota
+`/totem` **já responde com a interface do totem hoje**, sem nenhuma mudança de código —
+só que por acidente, do mesmo jeito que `/qualquer-coisa` também responde. Não é uma rota
+intencional; é o que sobra depois de descartar `/painel` e `/galeria`. `app/main.py`
+reforça isso no fallback de SPA: qualquer caminho fora de `/api` cai no `index.html`, e é
+o `App.tsx` quem decide o que mostrar.
+
+### O que fazer
+
+Tornar `/totem` uma rota **verificada explicitamente**, no mesmo padrão de `/painel`:
+
+```tsx
+if (caminho === "/totem") return "totem";
+```
+
+E decidir o que acontece na **raiz** depois disso — esta é a parte que precisa de decisão,
+não só de código:
+
+- **Opção A — redireciona `/` para `/totem`.** Atalhos e tablets já fixados na raiz
+  (ver `docs/setup-tablet.md`) continuam funcionando sem reconfiguração.
+- **Opção B — a raiz para de ser o totem.** Fica livre para uso futuro (uma tela de
+  entrada, por exemplo, se um dia existirem mais tipos de cliente). Quebra qualquer
+  tablet já fixado na raiz até ser reconfigurado para `/totem`.
+- **Opção C — as duas continuam respondendo,** raiz e `/totem` mostrando o totem, sem
+  redirecionamento. Mais simples, mas mantém a assimetria que motivou o item.
+
+Recomendação: **Opção A** — resolve a assimetria com `/painel` sem quebrar nenhum tablet já
+configurado, e deixa a porta aberta para a Opção B mais adiante, quando (e se) fizer
+sentido usar a raiz para outra coisa.
+
+### Onde mexer
+
+| arquivo | o quê |
+|---|---|
+| `frontend/src/App.tsx` | `rotaAtual()` passa a checar `/totem` explicitamente; decidir o que a raiz faz (ver opções acima) |
+| `backend/tests/test_main.py` | `test_raiz_serve_a_aplicacao` e o parametrizado `test_rotas_da_aplicacao_recebem_o_index` testam hoje que **qualquer** caminho (inclusive a raiz) devolve o `index.html` da SPA — isso não muda no backend, ele continua servindo o mesmo arquivo para tudo fora de `/api`. O que muda é o que o `App.tsx` decide fazer com o caminho depois de carregado; vale acrescentar um teste de que `/totem` monta explicitamente o componente `Totem`, e não só "cai lá por eliminação" |
+| `docs/setup-tablet.md` | a URL do atalho fixado no tablet passa a ser `http://RaspPoto.local:8000/totem` (ou o IP equivalente) — hoje o documento aponta pra raiz |
+| `docs/roteiro-teste.md` | as referências a `` `/` `` como a rota do totem (tabela de telas, o passo "Abra `/`" do roteiro) passam a apontar para `/totem` |
+| `frontend/scripts/verificar-discreto.mjs` e `verificar-midia.mjs` | não usam rota nenhuma (renderizam componente direto via `react-dom/server`) — não são afetados |
+
+### O que não muda
+
+- A interface da **central continua em `/painel`**, sem nenhuma alteração — o pedido foi
+  explícito sobre isso.
+- `/galeria` continua existindo só em desenvolvimento, do mesmo jeito.
+- Nenhuma mudança de backend: `app/main.py` já serve o mesmo `index.html` pra qualquer
+  caminho fora de `/api`, e essa parte está certa como está.
 
 ---
 
