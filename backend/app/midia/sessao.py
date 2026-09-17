@@ -147,6 +147,98 @@ def abrir(
     return sessao
 
 
+# Identificador da origem numa sessão de chamada (MEL-004).
+#
+# A câmera do operador não é um dispositivo da Pi — não está em `listar()` e
+# `obter()` não a conhece. Mas a sessão precisa de **algum** identificador de
+# origem, porque a auditoria (`midia_auditoria.dispositivo_id`) é a mesma
+# tabela. Um valor fixo e legível é melhor que `None`: quem ler a auditoria
+# meses depois vê "central" e entende de onde veio a imagem.
+DISPOSITIVO_CENTRAL = "central"
+TIPO_CHAMADA = "chamada"
+
+
+def abrir_chamada(chamado_id: str, operador: str | None = None) -> Sessao:
+    """Autoriza uma videochamada da central para o totem (MEL-004).
+
+    Gêmea de `abrir()`, e de propósito: **a mesma máquina de sessão**, invertendo
+    só a direção do fluxo. A sessão entra no mesmo `_sessoes`, então herda de
+    graça tudo o que a MVP-077 construiu — expira nos mesmos 10 minutos, é
+    varrida por `limpar_expiradas`, é fechada por `fechar_do_chamado` quando o
+    atendimento termina e por `fechar_todas` no encerramento do serviço, e deixa
+    o mesmo par de linhas na auditoria.
+
+    A única diferença em relação a `abrir()` é **não haver dispositivo a
+    checar**: a origem é a webcam do operador, que a Pi não enxerga. O resto das
+    restrições continua valendo, e são elas que importam — sem chamado não há
+    chamada, e chamado encerrado recusa.
+    """
+    chamado = db.obter_chamado(chamado_id)
+    if chamado is None:
+        raise SessaoRecusada(404, "chamado não encontrado")
+
+    if chamado["status"] in ENCERRADOS:
+        raise SessaoRecusada(
+            409,
+            f"chamado {chamado['status']}: não é possível abrir uma chamada de "
+            "um atendimento concluído",
+        )
+
+    agora = time.monotonic()
+    sessao = Sessao(
+        sessao_id=secrets.token_urlsafe(16),
+        chamado_id=chamado_id,
+        dispositivo_id=DISPOSITIVO_CENTRAL,
+        tipo=TIPO_CHAMADA,
+        operador=operador,
+        aberta_em=agora,
+        expira_em=agora + DURACAO_SEG,
+    )
+
+    with _trava:
+        _sessoes[sessao.sessao_id] = sessao
+
+    db.registrar_midia(
+        sessao.sessao_id,
+        chamado_id,
+        DISPOSITIVO_CENTRAL,
+        "abertura",
+        dispositivo="Câmera do operador (central)",
+        operador=operador,
+    )
+    logger.info(
+        "chamada aberta: %s por %s (chamado %s)",
+        sessao.sessao_id,
+        operador or "—",
+        chamado_id,
+    )
+    return sessao
+
+
+def obter_chamada(sessao_id: str) -> Sessao:
+    """A sessão de chamada válida com este id, ou levanta.
+
+    Separada de `validar()` porque aquela compara `dispositivo_id`, e aqui não
+    há dispositivo a comparar — o que se confere é que a sessão **é** de chamada.
+    Sem essa checagem, uma sessão de câmera serviria para publicar quadros na
+    tela do totem, e isso é o inverso do que ela autoriza.
+
+    Tudo vira **403**, inclusive inexistente: distinguir "não existe" de
+    "expirou" diria a quem tenta adivinhar se acertou o formato do token.
+    """
+    with _trava:
+        sessao = _sessoes.get(sessao_id)
+
+    if sessao is None or sessao.tipo != TIPO_CHAMADA:
+        raise SessaoRecusada(403, "sessão de chamada inválida")
+
+    if sessao.expirada:
+        _encerrar(sessao, "expiracao", "prazo de 10 min esgotado")
+        raise SessaoRecusada(403, "sessão de chamada expirada")
+
+    return sessao
+
+
 def validar(sessao_id: str, dispositivo_id: str) -> Sessao:
     """A sessão que autoriza este stream, ou levanta.
 
@@ -266,6 +358,12 @@ def fechar_todas(motivo: str = "serviço encerrado") -> int:
 def ativas() -> list[Sessao]:
     with _trava:
         return [s for s in _sessoes.values() if not s.expirada]
+
+
+def urls_da_chamada(sessao: Sessao) -> tuple[str, str]:
+    """`(envio_url, stream_url)` de uma sessão de chamada (MEL-004)."""
+    base = f"/api/v1/midia/chamada/{sessao.sessao_id}"
+    return f"{base}/quadro", f"{base}/stream"
 
 
 def url_do_stream(sessao: Sessao) -> str:

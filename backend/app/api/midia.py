@@ -29,7 +29,8 @@ from fastapi.responses import StreamingResponse
 from .. import midia
 from ..midia import camera, microfone
 from ..midia import sessao as sessoes
-from ..models import MidiaIn, MidiaOut
+from ..midia.chamada import TAMANHO_MAXIMO, SemQuadro, repasse
+from ..models import ChamadaOut, MidiaIn, MidiaOut
 from .deps import CABECALHO, exigir_token
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,46 @@ def fechar_midia(chamado_id: str, sessao: str | None = None) -> None:
     if sessao:
         sessoes.fechar(sessao)
     else:
+        sessoes.fechar_do_chamado(chamado_id, "detalhe do chamado fechado")
+
+
+@router.post("/chamados/{chamado_id}/chamada", response_model=ChamadaOut, status_code=201)
+def abrir_chamada(chamado_id: str, request: Request) -> ChamadaOut:
+    """Autoriza uma videochamada da central para o totem (MEL-004).
+
+    O inverso de `abrir_midia`: lá a central pede para **ver** o local; aqui ela
+    pede para **aparecer** na tela de quem está esperando. Mesma máquina de
+    sessão, mesma recusa com 409 em chamado encerrado, mesma auditoria.
+    """
+    try:
+        s = sessoes.abrir_chamada(chamado_id, _operador(request))
+    except sessoes.SessaoRecusada as recusa:
+        raise HTTPException(status_code=recusa.status, detail=recusa.detalhe) from None
+
+    envio, stream = sessoes.urls_da_chamada(s)
+    return ChamadaOut(
+        sessao_id=s.sessao_id,
+        envio_url=envio,
+        stream_url=stream,
+        expira_em=sessoes.DURACAO_SEG,
+    )
+
+
+@router.delete("/chamados/{chamado_id}/chamada", status_code=204)
+def fechar_chamada(chamado_id: str, sessao: str | None = None) -> None:
+    """Encerra a videochamada.
+
+    Descarta também o quadro guardado: sem isso, a última imagem do operador
+    ficaria na memória depois de a chamada acabar — e um stream reaberto
+    mostraria um quadro velho por um instante.
+    """
+    if sessao:
+        repasse.encerrar(sessao)
+        sessoes.fechar(sessao, "chamada encerrada pelo operador")
+    else:
+        for s in sessoes.ativas():
+            if s.chamado_id == chamado_id and s.tipo == sessoes.TIPO_CHAMADA:
+                repasse.encerrar(s.sessao_id)
         sessoes.fechar_do_chamado(chamado_id, "detalhe do chamado fechado")
 
 
@@ -327,6 +368,111 @@ async def clipe_microfone(dispositivo_id: str, sessao: str = "", segundos: float
             ),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Videochamada: a central publica, o totem consome (MEL-004)
+# ---------------------------------------------------------------------------
+
+
+@router_stream.post("/midia/chamada/{sessao_id}/quadro", status_code=204)
+async def publicar_quadro(sessao_id: str, request: Request) -> None:
+    """Recebe **um** quadro JPEG da central.
+
+    Fica no `router_stream`, sem token, pela mesma razão dos streams: quem
+    autoriza é a sessão. Aqui a sessão vai no caminho e não na query string, e a
+    diferença é real — o corpo é enviado por `fetch`, que **pode** definir
+    cabeçalhos, mas manter o token fora do cabeçalho deixa o par
+    enviar/consumir simétrico e com o mesmo formato de URL.
+
+    **Só aceita sessão de chamada** (`obter_chamada` confere o tipo). Sem isso,
+    uma sessão de câmera — que a central obtém para *ver* o local — serviria
+    para publicar imagem na tela do totem, que é o inverso do que ela autoriza.
+    """
+    s = _validar_chamada(sessao_id)
+
+    # `content-length` antes de ler: recusar depois de receber 50 MB já teria
+    # gasto a memória que o limite existe para proteger.
+    declarado = request.headers.get("content-length")
+    if declarado and int(declarado) > TAMANHO_MAXIMO:
+        raise HTTPException(status_code=413, detail="quadro acima do limite")
+
+    corpo = await request.body()
+    if not corpo:
+        raise HTTPException(status_code=422, detail="quadro vazio")
+    if len(corpo) > TAMANHO_MAXIMO:
+        raise HTTPException(status_code=413, detail="quadro acima do limite")
+
+    repasse.publicar(s.sessao_id, corpo)
+
+
+@router_stream.get("/midia/chamada/{sessao_id}/stream")
+def stream_chamada(request: Request, sessao_id: str) -> StreamingResponse:
+    """O vídeo do operador, para o totem (MEL-004).
+
+    Mesmo transporte do vídeo da Pi: `multipart/x-mixed-replace` num `<img>`,
+    sem uma linha de JavaScript de player. **Tocar não exige contexto seguro** —
+    é só capturar que exige. Por isso o lado do totem não tem bloqueio nenhum,
+    mesmo com o sistema servindo em HTTP puro.
+    """
+    s = _validar_chamada(sessao_id)
+
+    return StreamingResponse(
+        _multipart_chamada(request, s),
+        media_type=f"multipart/x-mixed-replace; boundary={LIMITE}",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def _multipart_chamada(
+    request: Request, s: sessoes.Sessao
+) -> AsyncIterator[bytes]:
+    """Gera o corpo multipart a partir dos quadros que a central publica.
+
+    Assíncrono e sem threadpool, ao contrário do `_multipart` da câmera: aqui
+    não há captura bloqueante para tirar do event loop — só uma espera em
+    `asyncio.Event`, que é assíncrona por natureza.
+
+    Começa pelo quadro atual, se já houver: quem assina depois de a central já
+    estar enviando não deve encarar segundos de tela vazia esperando o próximo.
+    """
+    atual = repasse.primeiro(s.sessao_id)
+    if atual is not None:
+        yield _parte(atual)
+
+    while True:
+        if await request.is_disconnected():
+            return
+        if s.expirada:
+            logger.info("chamada encerrada por expiração: %s", s.sessao_id)
+            return
+        try:
+            yield _parte(await repasse.aguardar(s.sessao_id))
+        except SemQuadro:
+            # A central parou de enviar. Encerrar é melhor que congelar: o
+            # `<img>` do totem mantém a última imagem, e insistir manteria a
+            # conexão aberta contra alguém que já foi embora.
+            logger.info("chamada sem quadros: %s", s.sessao_id)
+            return
+
+
+def _parte(quadro: bytes) -> bytes:
+    return (
+        f"--{LIMITE}\r\n"
+        f"Content-Type: image/jpeg\r\n"
+        f"Content-Length: {len(quadro)}\r\n\r\n"
+    ).encode() + quadro + b"\r\n"
+
+
+def _validar_chamada(sessao_id: str) -> sessoes.Sessao:
+    try:
+        return sessoes.obter_chamada(sessao_id)
+    except sessoes.SessaoRecusada as recusa:
+        raise HTTPException(status_code=403, detail=recusa.detalhe) from None
 
 
 def _validar(sessao_id: str, dispositivo_id: str) -> sessoes.Sessao:

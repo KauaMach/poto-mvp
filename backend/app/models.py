@@ -346,6 +346,20 @@ class MidiaOut(BaseModel):
     tipo: str
 
 
+class ChamadaOut(BaseModel):
+    """Videochamada autorizada da central para o totem (MEL-004).
+
+    Duas URLs porque são dois papéis: a central **envia** quadros, o totem
+    **consome**. Vêm montadas pelo backend, como no `MidiaOut` — o formato do
+    token de sessão não é assunto de quem chama.
+    """
+
+    sessao_id: str
+    envio_url: str
+    stream_url: str
+    expira_em: int = Field(description="Segundos até a sessão expirar.")
+
+
 class EscalonamentoIn(BaseModel):
     """Acionamento manual de uma autoridade do estado.
 

@@ -25,7 +25,7 @@ poderia fazer mais ou melhor)
 | [MEL-002](#mel-002--https-só-necessário-para-o-caminho-b-da-mel-001) | HTTPS: só necessário para o Caminho B da MEL-001 | Melhoria | Baixa | Proposto |
 | [MEL-003](#mel-003--rota-explícita-totem-em-vez-de-a-raiz-ser-o-totem-por-padrão) | Rota explícita `/totem`, em vez de a raiz ser o totem por padrão | Melhoria | Média | ✅ **Implementado** (18/09) |
 | [COR-002](#cor-002--o-totem-recebe-o-relato-de-todos-os-chamados-pelo-websocket) | O totem recebe o relato de **todos** os chamados pelo WebSocket | Correção | **Alta** | ✅ **Implementado** (18/09) |
-| [MEL-004](#mel-004--backend-da-videochamada-sessão-recepção-de-quadros-e-relay) | Backend da videochamada: sessão, recepção de quadros e relay | Melhoria | Alta | Proposto |
+| [MEL-004](#mel-004--backend-da-videochamada-sessão-recepção-de-quadros-e-relay) | Backend da videochamada: sessão, recepção de quadros e relay | Melhoria | Alta | ✅ **Implementado** (18/09) |
 | [MEL-005](#mel-005--painel-botão-iniciar-videochamada-e-captura-da-webcam) | Painel: botão "Iniciar videochamada" e captura da webcam | Melhoria | Alta | Proposto |
 | [MEL-006](#mel-006--totem-o-operador-aparece-na-tela-de-alerta-ativo) | Totem: o operador aparece na tela de alerta ativo | Melhoria | Alta | Proposto |
 | [MEL-007](#mel-007--áudio-da-central-para-o-totem) | Áudio da central para o totem | Melhoria | Média | Proposto |
@@ -504,6 +504,7 @@ gravidade, nem de nada de outros chamados. O caminho A entrega exatamente isso.
 ## MEL-004 — Backend da videochamada: sessão, recepção de quadros e relay
 
 **Tipo:** Melhoria · **Prioridade sugerida:** Alta · **Depende de:** COR-002
+**Status:** ✅ **Implementado em 18/09.** 24 testes em `tests/test_chamada.py`.
 
 ### O que fazer
 
@@ -534,6 +535,36 @@ dispositivo e use um identificador fixo, mantendo tudo o mais.
   mal-comportado enche a memória. Um teto de tamanho por quadro e um descarte do anterior
   resolvem.
 - **O stream expira com a sessão**, checado a cada quadro — como o vídeo da Pi já faz.
+
+### Como ficou
+
+- **`abrir_chamada()` em `sessao.py`** — gêmea de `abrir()`, entrando no **mesmo**
+  `_sessoes`. Com isso herda de graça: expiração em 10 min, `limpar_expiradas`,
+  `fechar_do_chamado` (o chamado encerrar encerra a chamada), `fechar_todas` no shutdown, e
+  o par de auditoria. A única diferença é não haver dispositivo a checar — a origem é a
+  webcam do operador, que a Pi não enxerga. Registrada como `dispositivo_id="central"`,
+  legível para quem ler a auditoria meses depois.
+- **`obter_chamada()`** confere que a sessão **é de chamada**. Sem isso, uma sessão de
+  câmera — que a central obtém para *ver* o local — serviria para publicar imagem na tela
+  do totem, o inverso do que ela autoriza.
+- **`app/midia/chamada.py` (novo)** — o repasse. Não é capturador: um quadro por sessão, o
+  mais recente, e um `asyncio.Event` **substituído** a cada publicação (reusar um só com
+  `clear()` criaria corrida — entre o `set` e o `clear`, um assinante lento perderia o
+  aviso). Teto de 512 KB por quadro.
+- **Quatro rotas**: `POST/DELETE /chamados/{id}/chamada` (com token) e
+  `POST /midia/chamada/{sessao}/quadro` + `GET .../stream` (autorizadas pela sessão).
+
+### O teto de tamanho tem duas checagens, e a mutação mostrou por quê
+
+A primeira olha o `content-length` e recusa **antes** de ler; a segunda mede o corpo já
+lido. As duas devolvem 413, então o status não distingue uma da outra — e foi isso que a
+mutação expôs: removendo a segunda, os 22 testes continuavam passando, porque todos
+mandavam o cabeçalho. Faltava o caso `chunked`, em que `content-length` não vem.
+
+E removendo a **primeira** também passava, porque a segunda pega. A diferença dela não é o
+status, é **memória**: recusar depois de `await request.body()` já teria carregado o corpo
+inteiro na Pi, que é o que o limite existe para evitar. O teste que fecha isso exercita a
+função com um `body()` que acusa se for chamado.
 
 ---
 
