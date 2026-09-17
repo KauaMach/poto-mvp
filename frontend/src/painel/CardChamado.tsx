@@ -1,7 +1,7 @@
-/* Cartão de chamado — MVP-061.
+/* Cartão de chamado — MVP-061, reformado na MEL-009.
  *
  * O que o operador lê em um relance, na ordem em que ele lê: gravidade,
- * protocolo, tipo, onde, e o relato.
+ * protocolo, hora, tipo, onde, e o relato.
  *
  * A **borda esquerda de 5px** na cor da gravidade é o que permite varrer vinte
  * cartões sem ler nenhum. Mas ela nunca vem sozinha: o chip ao lado diz
@@ -9,18 +9,18 @@
  * ~8% dos homens com alguma deficiência na percepção de vermelho e verde, e
  * este é um painel de emergência.
  *
- * As ações do operador (MVP-063) ficam no rodapé e só aparecem em chamado que
- * ainda espera alguém. O contador de SLA (MVP-064) aparece pela mesma condição
- * — e só onde há prazo: `orientacao` traz `null` no `/config`, que é informação
- * e não ausência dela (não há urgência a proteger numa dúvida de ouvidoria).
+ * **O cartão virou um resumo clicável.** Antes ele carregava botão de
+ * reconhecer, seletor de estado, seletor de dispositivo de mídia e a
+ * videochamada — quatro controles disputando espaço com o dado que se precisa
+ * ler de relance, vezes vinte cartões. E a videochamada, que é a ação mais
+ * importante de um pânico, terminava como um botão apagado no pé.
+ *
+ * Agora o cartão mostra e o detalhe faz. O rodapé guarda só a **situação** e um
+ * resumo do que já aconteceu — é o que diz se este cartão precisa de alguém.
  */
-import { useCallback, useState } from "react";
-import { ackChamado, atualizarChamado } from "../comum/api";
-import type { Chamado, Dispositivo, StatusChamado } from "../comum/tipos";
+import type { Chamado } from "../comum/tipos";
 import { Sym } from "../componentes/Sym";
-import { ChamadaChamado } from "./ChamadaChamado";
 import { ContadorSLA } from "./ContadorSLA";
-import { MidiaChamado } from "./MidiaChamado";
 import {
   ABERTOS,
   COR_GRAVIDADE,
@@ -29,66 +29,38 @@ import {
   TITULO_TIPO,
 } from "./rotulos";
 
-/* Estados que o operador escolhe no seletor.
- *
- * `reconhecido` **não** está aqui, e a omissão é deliberada: ele vem do botão
- * "Reconhecer", que grava também o `acked_at` de onde sai a métrica de tempo
- * até o reconhecimento. Oferecê-lo no seletor daria dois caminhos para a mesma
- * transição, e um deles não pararia o relógio do SLA.
- *
- * `cancelado` também fica fora: marcar um pedido de socorro como trote é uma
- * decisão que merece mais atrito que um item de lista suspensa.
- */
-const TRANSICOES: { valor: StatusChamado; rotulo: string }[] = [
-  { valor: "em_atendimento", rotulo: "Em atendimento" },
-  { valor: "encerrado", rotulo: "Encerrado" },
-];
-
 type Props = {
   chamado: Chamado;
-  onMudou: (chamado: Chamado) => void;
   /** Prazo da gravidade deste chamado, ou `null` se não escalona (MVP-064). */
   slaSegundos: number | null;
-  /** Dispositivos de captura disponíveis no totem (MVP-078). */
-  dispositivos: Dispositivo[];
+  /** Abre o detalhe. É a única ação do cartão. */
+  onAbrir: () => void;
+  selecionado?: boolean;
 };
 
 export function CardChamado({
   chamado,
-  onMudou,
   slaSegundos,
-  dispositivos,
+  onAbrir,
+  selecionado = false,
 }: Props) {
-  const [ocupado, setOcupado] = useState(false);
   const aberto = ABERTOS.has(chamado.status);
-
-  const agir = useCallback(
-    async (acao: () => Promise<Chamado>) => {
-      /* Trava antes de qualquer `await`: dois cliques rápidos no "Reconhecer"
-       * mandariam dois POST. O segundo é inofensivo — o backend preserva o
-       * `acked_at` original (MVP-033) — mas o cartão piscaria duas vezes, e
-       * num painel de vinte cartões isso é o operador perdendo o lugar. */
-      setOcupado(true);
-      try {
-        onMudou(await acao());
-      } catch {
-        /* Mantém o cartão como está. Se a ação chegou, o WebSocket corrige o
-         * estado sozinho (MVP-062); se não chegou, o operador tenta de novo.
-         * Um alerta de erro aqui seria uma caixa para fechar no meio de uma
-         * emergência. */
-      } finally {
-        setOcupado(false);
-      }
-    },
-    [onMudou],
-  );
+  const precisaDeAlguem = aberto && chamado.acked_at === null;
 
   return (
-    <article
-      className="poto-card"
-      /* A cor vem por `style` porque depende do dado; a espessura e o estilo
-       * ficam no CSS. */
+    /* `<button>` e não `<div onClick>`: o cartão inteiro é o alvo, e um botão
+     * de verdade traz foco por teclado, `Enter`/`Espaço` e anúncio correto no
+     * leitor de tela — de graça. Um `div` clicável exigiria replicar os três. */
+    <button
+      type="button"
+      onClick={onAbrir}
+      className={
+        selecionado ? "poto-card poto-card-selecionado" : "poto-card"
+      }
       style={{ borderLeftColor: COR_GRAVIDADE[chamado.gravidade] }}
+      aria-label={`${TITULO_TIPO[chamado.tipo_ocorrencia]}, ${
+        ROTULO_GRAVIDADE[chamado.gravidade]
+      }, ${chamado.chamado_id} — abrir detalhe`}
     >
       <header className="poto-card-topo">
         <span
@@ -99,33 +71,29 @@ export function CardChamado({
           <span aria-hidden="true" className="poto-ponto" />
           {ROTULO_GRAVIDADE[chamado.gravidade]}
         </span>
-        <span className="poto-protocolo tabular">{chamado.chamado_id}</span>
+        <span className="poto-card-hora tabular">
+          <time dateTime={chamado.created_at}>{hora(chamado.created_at)}</time>
+        </span>
       </header>
 
-      <h2 className="poto-card-titulo">{TITULO_TIPO[chamado.tipo_ocorrencia]}</h2>
+      <h2 className="poto-card-titulo">
+        {TITULO_TIPO[chamado.tipo_ocorrencia]}
+      </h2>
+      <p className="poto-protocolo tabular">{chamado.chamado_id}</p>
 
-      <p className="poto-card-linha">
-        <span className="poto-card-rotulo">Totem</span>
+      <p className="poto-card-local">
         {chamado.totem_id}
-      </p>
-      <p className="poto-card-linha">
-        <span className="poto-card-rotulo">Canal</span>
-        {chamado.canal_roteado || "—"}
-      </p>
-      <p className="poto-card-linha">
-        <span className="poto-card-rotulo">Recebido</span>
-        <time dateTime={chamado.created_at} className="tabular">
-          {hora(chamado.created_at)}
-        </time>
+        {chamado.canal_roteado && (
+          <span className="poto-card-canal"> · {chamado.canal_roteado}</span>
+        )}
         {atrasado(chamado) && (
           /* A lacuna que a MVP-059 documentou, resolvida aqui.
            *
            * Um evento que ficou na fila offline chega com payload **idêntico**
            * a um ao vivo — é isso que preserva a idempotência — e o único sinal
            * disponível é a distância entre o relógio do tablet e o do servidor.
-           * Sem esta marca o operador não sabe que está vendo um pedido de
-           * horas atrás, e trata como se estivesse acontecendo agora.
-           */
+           * Sem esta marca o operador trata um pedido de horas atrás como se
+           * estivesse acontecendo agora. */
           <span className="poto-atraso">
             esperou {haQuantoTempo(chamado)} na fila
           </span>
@@ -145,89 +113,27 @@ export function CardChamado({
         <p className="poto-card-relato">“{chamado.texto_livre}”</p>
       )}
 
-      {/* Mídia só em chamado **ativo** (MVP-078).
-        *
-        * Duas razões, e a segunda é a que importa. A primeira é técnica: o
-        * backend recusa com 409 em chamado encerrado ou cancelado, então o
-        * botão não funcionaria. A segunda é de projeto: um atendimento
-        * concluído não justifica olhar o corredor, e oferecer o botão ali
-        * transformaria o histórico de chamados numa lista de pretextos para
-        * ligar a câmera.
-        *
-        * `aberto` é o mesmo conjunto que governa as ações do operador — a
-        * condição é uma só, e não duas que podem divergir. */}
-      {aberto && (
-        <MidiaChamado chamado={chamado} dispositivos={dispositivos} />
-      )}
-
-      {/* Videochamada só em **pânico** ativo (MEL-005).
-        *
-        * A condição não é preferência: `alerta_ativo` é o único estado com tela
-        * persistente no totem. As outras trilhas mostram a confirmação por 9 s
-        * e voltam para a Home — não há onde o vídeo aparecer. Oferecer o botão
-        * ali abriria uma chamada para uma tela que já saiu.
-        *
-        * `origem_acionamento` e não `status`: o pânico pode estar em
-        * `reconhecido` ou `em_atendimento` e a tela de alerta continua aberta,
-        * porque ela só fecha por ação de quem está no totem. */}
-      {aberto && chamado.origem_acionamento === "panico" && (
-        <ChamadaChamado chamado={chamado} />
-      )}
-
       <footer className="poto-card-rodape">
-        <span className="poto-status">{ROTULO_STATUS[chamado.status]}</span>
-
-        <div className="poto-card-acoes">
-          {/* Some depois do sucesso porque desaparece a condição que o traz:
-            * `acked_at` deixa de ser nulo. Não há estado de "já cliquei" a
-            * manter — o dado é a fonte. */}
-          {aberto && chamado.acked_at === null && (
-            <button
-              type="button"
-              className="poto-botao-primario"
-              disabled={ocupado}
-              onClick={() => void agir(() => ackChamado(chamado.chamado_id))}
-            >
-              <Sym nome="check" tamanho="sm" cor="#fff" />
-              Reconhecer
-            </button>
+        <span
+          className={
+            precisaDeAlguem ? "poto-status poto-status-espera" : "poto-status"
+          }
+        >
+          {precisaDeAlguem && (
+            <span aria-hidden="true" className="poto-ponto poto-ponto-vivo" />
           )}
+          {ROTULO_STATUS[chamado.status]}
+        </span>
 
-          {(aberto ||
-            chamado.status === "reconhecido" ||
-            chamado.status === "em_atendimento") && (
-            <label className="poto-seletor">
-              <span className="visually-hidden">
-                Mudar estado de {chamado.chamado_id}
-              </span>
-              {/* Valor fixo em "" e não controlado pelo status: o seletor é um
-                * disparador de ação, não um espelho do estado. Mostrar o
-                * estado atual ali convidaria o operador a "voltar" mudando a
-                * seleção, e o rodapé já diz em que estado o chamado está. */}
-              <select
-                value=""
-                disabled={ocupado}
-                onChange={(e) => {
-                  const destino = e.target.value as StatusChamado;
-                  if (destino) {
-                    void agir(() =>
-                      atualizarChamado(chamado.chamado_id, { status: destino }),
-                    );
-                  }
-                }}
-              >
-                <option value="">Mudar estado…</option>
-                {TRANSICOES.filter((t) => t.valor !== chamado.status).map((t) => (
-                  <option key={t.valor} value={t.valor}>
-                    {t.rotulo}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </div>
+        {/* Afordância explícita de que o cartão abre algo. Sem ela, um cartão
+          * clicável parece um cartão inerte — e o operador não descobre o
+          * detalhe por tentativa. */}
+        <span className="poto-card-abrir" aria-hidden="true">
+          Detalhes
+          <Sym nome="arrow_back" tamanho="xs" />
+        </span>
       </footer>
-    </article>
+    </button>
   );
 }
 

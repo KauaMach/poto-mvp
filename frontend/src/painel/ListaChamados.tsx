@@ -1,28 +1,32 @@
-/* Lista de chamados do painel — MVP-060.
+/* Lista de chamados do painel — MVP-060, reformada na MEL-009.
  *
  * A ordenação — a decisão que importa — vive em `ordenacao.ts`.
+ *
+ * A lista deixou de repassar `onMudou` e `dispositivos`: as ações saíram do
+ * cartão e foram para o detalhe (ver `CardChamado`). O que a lista faz agora é
+ * ordenar, renderizar e dizer qual cartão está aberto.
  */
-import type { Chamado, Dispositivo } from "../comum/tipos";
+import type { Chamado } from "../comum/tipos";
 import { CardChamado } from "./CardChamado";
 import { ordenar } from "./ordenacao";
 
 type Props = {
   chamados: Chamado[];
-  /** Dispositivos de captura, buscados uma vez pelo painel (MVP-078). */
-  dispositivos: Dispositivo[];
-  onMudou: (chamado: Chamado) => void;
   /** Prazos de SLA, de `GET /config` (MVP-064). */
   sla?: Record<string, number | null>;
   /** Marcado quando a lista está filtrada, para a mensagem de vazio mudar. */
   filtrado?: boolean;
+  onAbrir: (chamado: Chamado) => void;
+  /** Protocolo do chamado aberto no detalhe, para destacá-lo na lista. */
+  abertoId?: string | null;
 };
 
 export function ListaChamados({
   chamados,
-  onMudou,
   sla,
-  dispositivos,
   filtrado,
+  onAbrir,
+  abertoId,
 }: Props) {
   if (chamados.length === 0) {
     return (
@@ -40,9 +44,9 @@ export function ListaChamados({
         <CardChamado
           key={chamado.chamado_id}
           chamado={chamado}
-          onMudou={onMudou}
           slaSegundos={sla?.[chamado.gravidade] ?? null}
-          dispositivos={dispositivos}
+          onAbrir={() => onAbrir(chamado)}
+          selecionado={chamado.chamado_id === abertoId}
         />
       ))}
     </div>

@@ -1,8 +1,13 @@
-/* Verifica que a mídia não aparece onde não deve — MVP-078.
+/* Verifica que a mídia não aparece onde não deve — MVP-078, atualizado na MEL-009.
  *
  * O critério da task é "botão só aparece em chamado ativo e com dispositivo
  * disponível". Automatizado pelo mesmo motivo do `verificar-discreto.mjs`: uma
  * inspeção manual protege o dia em que foi feita.
+ *
+ * **Passou a renderizar o `DetalheChamado` e não o `CardChamado`**: na MEL-009
+ * as ações saíram do cartão e foram para a gaveta, onde têm largura. O cartão
+ * virou um resumo clicável. O script segue cobrando a mesma garantia — mídia
+ * só em chamado ativo — no lugar onde ela agora vive.
  *
  * A propriedade em jogo é de privacidade, não de layout. Um botão de câmera
  * num chamado **encerrado** transformaria o histórico de chamados numa lista
@@ -193,12 +198,13 @@ function renderizar(chamado, dispositivos) {
   writeFileSync(
     entrada,
     `import { renderToStaticMarkup } from "react-dom/server";
-     import { CardChamado } from "${RAIZ}src/painel/CardChamado";
+     import { DetalheChamado } from "${RAIZ}src/painel/DetalheChamado";
      process.stdout.write(renderToStaticMarkup(
-       <CardChamado
+       <DetalheChamado
          chamado={${JSON.stringify(chamado)}}
          dispositivos={${JSON.stringify(dispositivos)}}
          onMudou={() => {}}
+         onFechar={() => {}}
          slaSegundos={120}
        />
      ));`,

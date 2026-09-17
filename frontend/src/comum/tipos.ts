@@ -175,3 +175,56 @@ export type ChamadaSessao = {
   audio_url: string;
   expira_em: number;
 };
+
+/* --- Detalhe do chamado (MVP-032, consumido a partir da MEL-009) ---------- */
+
+export type NotificacaoOut = {
+  canal: string;
+  nome: string;
+  /** Vem **mascarado** pelo backend: só os últimos dígitos. */
+  destino: string;
+  provider: string;
+  sucesso: boolean;
+  mensagem: string | null;
+  detalhe: string | null;
+  escalonamento: boolean;
+  created_at: string;
+};
+
+export type EstadoOut = {
+  de: StatusChamado | null;
+  para: StatusChamado;
+  created_at: string;
+};
+
+/** O que `GET /chamados/{id}` devolve: o chamado **e a história dele**.
+ *
+ * O endpoint existe desde a MVP-032 e o painel nunca o consumiu — a lacuna que
+ * eu mesmo documentei no roteiro de teste. É o que responde "por que este
+ * chamado foi para o CSV?" meses depois.
+ */
+export type ChamadoDetalhe = Chamado & {
+  triagem: {
+    tipo?: string;
+    gravidade?: string;
+    confianca?: number;
+    canal_sugerido?: string;
+    sinal_critico?: boolean;
+    fonte?: string;
+    trilha_escolhida?: string;
+  } | null;
+  notificacoes: NotificacaoOut[];
+  estados: EstadoOut[];
+};
+
+/** Uma linha da auditoria de mídia (MVP-077). */
+export type AuditoriaMidia = {
+  sessao_id: string;
+  dispositivo_id: string;
+  dispositivo: string | null;
+  operador: string | null;
+  acao: string;
+  motivo: string | null;
+  duracao_seg: number | null;
+  created_at: string;
+};

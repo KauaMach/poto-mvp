@@ -24,10 +24,14 @@ import type {
 } from "../comum/tipos";
 import { useEventosWS } from "../comum/useEventosWS";
 import { Wordmark } from "../componentes/Wordmark";
+import { ABAS, type Aba } from "./abas";
 import { BarraFiltros } from "./BarraFiltros";
+import { DetalheChamado } from "./DetalheChamado";
 import { aplicarFiltros, FILTROS_VAZIOS, temFiltro, type Filtros } from "./filtros";
 import { IndicadorTempoReal } from "./IndicadorTempoReal";
 import { ListaChamados } from "./ListaChamados";
+import { ABERTOS } from "./rotulos";
+import { VisaoAnalises, VisaoTotens } from "./Visoes";
 
 type Carga =
   | { estado: "carregando" }
@@ -42,6 +46,11 @@ export function Painel() {
    * cartões na tela, cada um pedindo `/dispositivos`, seriam vinte requisições
    * para a mesma resposta. */
   const [dispositivos, setDispositivos] = useState<Dispositivo[]>([]);
+  const [aba, setAba] = useState<Aba>("agora");
+  /* Guarda o **protocolo**, não o objeto: a lista é substituída a cada evento
+   * do WebSocket, e um objeto guardado ficaria congelado no estado antigo
+   * enquanto a lista ao lado avança. O detalhe lê sempre o chamado atual. */
+  const [abertoId, setAbertoId] = useState<string | null>(null);
   const [filtros, setFiltros] = useState<Filtros>(FILTROS_VAZIOS);
 
   /* Insere ou substitui **no lugar**, indexando por `chamado_id`.
@@ -134,51 +143,131 @@ export function Painel() {
     };
   }, []);
 
+  /* O chamado aberto, lido da lista **viva**. Se ele sair da lista — o que só
+   * acontece numa recarga — o detalhe fecha em vez de mostrar dado velho. */
+  const chamadoAberto = abertoId
+    ? (chamados.find((c) => c.chamado_id === abertoId) ?? null)
+    : null;
+
+  /* "Agora" e "Histórico" recortam o mesmo conjunto por estado; os filtros da
+   * barra se aplicam por cima. Separar em abas em vez de deixar só o filtro é
+   * o que dá ao plantão uma tela de trabalho e outra de consulta. */
+  const doEstado =
+    aba === "historico"
+      ? chamados.filter((c) => !ABERTOS.has(c.status))
+      : chamados.filter((c) => ABERTOS.has(c.status));
+  const visiveis = aplicarFiltros(doEstado, filtros);
+  const pendentes = chamados.filter(
+    (c) => ABERTOS.has(c.status) && c.acked_at === null,
+  ).length;
+
   return (
     <div className="poto-painel">
-      <header className="poto-painel-topo">
-        <div className="poto-painel-marca">
+      <nav className="poto-lateral" aria-label="Seções da central">
+        <div className="poto-lateral-marca">
+          {/* A marca do projeto — o potó. Vem do blueprint de identidade
+              (`PLAN.md §5`), recortada e reduzida a 8,5 KB. */}
+          <img src="/poto-marca.png" alt="" width={112} height={24} />
           <Wordmark />
-          <span className="poto-painel-subtitulo">
-            Plataforma de Orientação, Triagem e Ouvidoria
+          <span className="poto-lateral-tagline">
+            Plataforma de Orientação,
+            <br />
+            Triagem e Ouvidoria
           </span>
         </div>
-        {/* Não é o `StatusPill` do totem: a pergunta ali é "o que eu tocar
-            chega agora?", e aqui é "o que está na tela é ao vivo?". Num painel
-            onde nada acontece por vinte minutos, silêncio e conexão morta
-            parecem idênticos e significam o oposto. */}
-        <IndicadorTempoReal estado={estadoWS} />
-      </header>
 
-      <main className="poto-painel-corpo">
-        {carga.estado === "carregando" && (
-          <p className="poto-vazio">Carregando chamados…</p>
-        )}
+        <ul className="poto-lateral-abas">
+          {ABAS.map((a) => (
+            <li key={a.id}>
+              <button
+                type="button"
+                className={
+                  a.id === aba ? "poto-aba poto-aba-ativa" : "poto-aba"
+                }
+                onClick={() => setAba(a.id)}
+                aria-current={a.id === aba ? "page" : undefined}
+                title={a.descricao}
+              >
+                {a.rotulo}
+                {/* Só a aba "Agora" leva contador, e só quando há o que fazer:
+                    um badge permanente em quatro abas vira ruído, e um badge
+                    com zero informa que não há nada — o que a ausência já
+                    informa. */}
+                {a.id === "agora" && pendentes > 0 && (
+                  <span className="poto-aba-badge tabular">{pendentes}</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
 
-        {carga.estado === "erro" && (
-          <p className="poto-vazio" role="alert">
-            {carga.mensagem}
-          </p>
-        )}
+        <div className="poto-lateral-pe">
+          <IndicadorTempoReal estado={estadoWS} />
+        </div>
+      </nav>
 
-        {carga.estado === "pronto" && (
-          <>
-            <BarraFiltros
-              chamados={chamados}
-              filtros={filtros}
-              onMudar={setFiltros}
-              onLimpar={() => setFiltros(FILTROS_VAZIOS)}
-            />
-            <ListaChamados
-              chamados={aplicarFiltros(chamados, filtros)}
-              onMudou={aplicar}
-              sla={config?.sla}
-              dispositivos={dispositivos}
-              filtrado={temFiltro(filtros)}
-            />
-          </>
+      <div className="poto-painel-area">
+        <main className="poto-painel-corpo">
+          {carga.estado === "carregando" && (
+            <p className="poto-vazio">Carregando chamados…</p>
+          )}
+
+          {carga.estado === "erro" && (
+            <p className="poto-vazio" role="alert">
+              {carga.mensagem}
+            </p>
+          )}
+
+          {carga.estado === "pronto" && (
+            <>
+              <header className="poto-painel-cabecalho">
+                <h1 className="poto-painel-h1">
+                  {ABAS.find((a) => a.id === aba)?.rotulo}
+                </h1>
+                <p className="poto-painel-descricao">
+                  {ABAS.find((a) => a.id === aba)?.descricao}
+                </p>
+              </header>
+
+              {(aba === "agora" || aba === "historico") && (
+                <>
+                  <BarraFiltros
+                    chamados={doEstado}
+                    filtros={filtros}
+                    onMudar={setFiltros}
+                    onLimpar={() => setFiltros(FILTROS_VAZIOS)}
+                  />
+                  <ListaChamados
+                    chamados={visiveis}
+                    sla={config?.sla}
+                    filtrado={temFiltro(filtros)}
+                    onAbrir={(c) => setAbertoId(c.chamado_id)}
+                    abertoId={abertoId}
+                  />
+                </>
+              )}
+
+              {aba === "totens" && <VisaoTotens chamados={chamados} />}
+              {aba === "analises" && (
+                <VisaoAnalises chamados={chamados} sla={config?.sla} />
+              )}
+            </>
+          )}
+        </main>
+
+        {/* Painel lateral e não modal: numa central a lista **precisa**
+            continuar visível, porque outro chamado pode entrar enquanto o
+            operador lê este — e o WebSocket vai acendê-lo atrás. */}
+        {chamadoAberto && (
+          <DetalheChamado
+            chamado={chamadoAberto}
+            dispositivos={dispositivos}
+            slaSegundos={config?.sla?.[chamadoAberto.gravidade] ?? null}
+            onMudou={aplicar}
+            onFechar={() => setAbertoId(null)}
+          />
         )}
-      </main>
+      </div>
     </div>
   );
 }

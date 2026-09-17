@@ -5,11 +5,16 @@
  * aberta por horas.
  */
 
+/* Três colunas quando há detalhe aberto: barra lateral fixa, lista, gaveta.
+ *
+ * `grid` e não `flex` porque as três larguras são de naturezas diferentes —
+ * a lateral é fixa, a lista é elástica, a gaveta tem teto. Num `flex` isso
+ * viraria três `flex-basis` disputando o mesmo espaço.
+ */
 .poto-painel {
   min-height: 100dvh;
-  /* Cancela o `overflow: hidden` do shell do totem — a lista precisa rolar,
-   * inclusive se o painel for aberto no tablet (MVP-055). */
-  overflow: auto;
+  display: grid;
+  grid-template-columns: 232px 1fr;
   background: var(--paper);
   /* O painel é lido, não tocado: seleção de texto liberada para copiar um
    * protocolo. O `base.css` a desliga globalmente por causa do kiosk. */
@@ -17,37 +22,186 @@
   user-select: text;
 }
 
-.poto-painel-topo {
+/* Abaixo de 900px a lateral vira uma faixa horizontal no topo. É o painel
+ * aberto num tablet (MVP-055): 232px de coluna fixa comeriam metade da
+ * largura útil. */
+@media (max-width: 900px) {
+  .poto-painel {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Barra lateral (MEL-009) --------------------------------------------- */
+
+.poto-lateral {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: var(--space-lg) var(--space-md);
+  background: var(--bg);
+  border-right: 1.5px solid var(--line);
+  /* Fica no lugar quando a lista rola: as abas e o indicador de conexão são
+   * navegação, e navegação que desaparece na rolagem obriga a subir de volta. */
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: 100dvh;
+}
+
+@media (max-width: 900px) {
+  .poto-lateral {
+    position: static;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1.5px solid var(--line);
+  }
+}
+
+.poto-lateral-marca {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.poto-lateral-marca img {
+  /* A marca é decorativa ao lado do wordmark em texto — por isso `alt=""` no
+   * JSX. Largura fixa para não esticar em tela grande. */
+  display: block;
+  height: auto;
+}
+
+.poto-lateral-tagline {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.poto-lateral-abas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+@media (max-width: 900px) {
+  .poto-lateral-abas {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+.poto-aba {
+  width: 100%;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-  padding: var(--space-md) clamp(16px, 3vw, 32px);
-  background: var(--bg);
-  border-bottom: 1.5px solid var(--line);
-  /* Fica visível na rolagem: o indicador de conexão é o que diz se a lista
-   * abaixo está viva, e some justamente quando alguém desce para procurar. */
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-
-.poto-painel-marca {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-md);
-  flex-wrap: wrap;
-}
-
-.poto-painel-subtitulo {
-  font-family: var(--font-ui);
-  font-size: 13px;
+  gap: var(--space-sm);
+  padding: 0 var(--space-md);
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
   color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+}
+
+/* A aba ativa é a única em ferrugem cheia da lateral. É a mesma regra 60/30/10
+ * do totem: a cor marca **onde você está**, e usá-la em mais de um lugar ao
+ * mesmo tempo dissolveria o sinal. */
+.poto-aba-ativa {
+  background: var(--rust);
+  color: #fff;
+}
+
+@media (hover: hover) {
+  .poto-aba:hover:not(.poto-aba-ativa) {
+    background: var(--paper);
+    color: var(--ink);
+  }
+}
+
+/* O contador só aparece na aba "Agora" e só quando há pendência — um badge com
+ * zero informa o que a ausência dele já informa. */
+.poto-aba-badge {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  background: var(--rust);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.poto-aba-ativa .poto-aba-badge {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.poto-lateral-pe {
+  margin-top: auto;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 900px) {
+  .poto-lateral-pe {
+    margin-top: 0;
+    border-top: none;
+    padding-top: 0;
+  }
+}
+
+/* --- Área de conteúdo ---------------------------------------------------- */
+
+.poto-painel-area {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-width: 0;
+}
+
+/* Com a gaveta aberta, a lista cede espaço em vez de ser coberta: o operador
+ * precisa continuar vendo um chamado novo entrar. */
+.poto-painel-area:has(.poto-detalhe) {
+  grid-template-columns: 1fr minmax(320px, 420px);
+}
+
+@media (max-width: 1100px) {
+  .poto-painel-area:has(.poto-detalhe) {
+    grid-template-columns: 1fr;
+  }
 }
 
 .poto-painel-corpo {
-  padding: clamp(16px, 3vw, 32px);
+  padding: clamp(16px, 2.5vw, 32px);
+  min-width: 0;
+}
+
+.poto-painel-cabecalho {
+  margin-bottom: var(--space-lg);
+}
+
+.poto-painel-h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(20px, 2.4vw, 26px);
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.poto-painel-descricao {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--muted);
+  margin: 4px 0 0;
 }
 
 .poto-vazio {
@@ -75,6 +229,9 @@
  * As ações ficam na MVP-063 e o SLA na MVP-064.
  */
 
+/* O cartão é um `<button>` (MEL-009), então precisa desfazer o que o
+ * `base.css` aplica a botões: alvo mínimo de 64px, centralização e caixa-alta
+ * fariam dele um botão gigante de texto centralizado. */
 .poto-card {
   background: var(--bg);
   border: 1.5px solid var(--line);
@@ -86,7 +243,34 @@
   padding: var(--space-md);
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: var(--space-xs);
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  text-align: left;
+  font: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+  transition:
+    border-color var(--t-micro),
+    box-shadow var(--t-micro),
+    transform var(--t-micro);
+}
+
+@media (hover: hover) {
+  .poto-card:hover {
+    border-color: var(--muted);
+    box-shadow: 0 2px 10px rgba(20, 15, 5, 0.06);
+  }
+}
+
+/* O cartão aberto na gaveta fica marcado: sem isso, numa lista de vinte, o
+ * operador perde de vista qual deles está lendo ao lado. */
+.poto-card-selecionado {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
 }
 
 .poto-card-topo {
@@ -565,4 +749,381 @@
 .poto-chamada-ativa .poto-chamada-nota {
   margin: 0;
   flex: 1 1 auto;
+}
+
+/* --- Detalhe do chamado (MEL-009) -----------------------------------------
+ *
+ * Gaveta à direita, não modal: numa central a lista precisa continuar visível,
+ * porque outro chamado pode entrar enquanto o operador lê este — e o WebSocket
+ * vai acendê-lo atrás. Um overlay esconderia isso no pior momento.
+ */
+
+.poto-detalhe {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-left: 1.5px solid var(--line);
+  /* Rola por dentro, com a própria altura de viewport: sem isto a página
+   * inteira rolaria e o cabeçalho do detalhe sairia de vista. */
+  position: sticky;
+  top: 0;
+  max-height: 100dvh;
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .poto-detalhe {
+    position: static;
+    max-height: none;
+    border-left: none;
+    border-top: 1.5px solid var(--line);
+  }
+}
+
+.poto-detalhe-topo {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-bottom: 1.5px solid var(--line);
+  border-left-width: 5px;
+  border-left-style: solid;
+  background: var(--bg);
+  flex: 0 0 auto;
+}
+
+.poto-detalhe-titulo {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  margin: var(--space-xs) 0 2px;
+}
+
+.poto-detalhe-fechar {
+  min-height: 40px;
+  min-width: 40px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.poto-detalhe-corpo {
+  padding: var(--space-md);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.poto-detalhe-linha {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--ink);
+  margin: 0;
+}
+
+.poto-detalhe-secao {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--line);
+}
+
+.poto-detalhe-secao h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 var(--space-sm);
+}
+
+.poto-detalhe-texto {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* Nota explicativa dentro de uma seção. Existe porque "Triagem" e "Auditoria
+ * de mídia" não são autoexplicativas para quem entra de plantão: uma frase
+ * dizendo o que aquilo responde vale mais que o título sozinho. */
+.poto-detalhe-nota {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--faint);
+  margin: 0 0 var(--space-sm);
+}
+
+.poto-detalhe-meta {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.poto-detalhe-lista,
+.poto-detalhe-tempo {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.poto-detalhe-lista li,
+.poto-detalhe-tempo li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+/* A linha do tempo ganha um traço à esquerda: é o que faz ler como sequência
+ * em vez de lista solta. */
+.poto-detalhe-tempo li {
+  padding-left: var(--space-sm);
+  border-left: 2px solid var(--line);
+}
+
+.poto-pastilha-ok,
+.poto-pastilha-falha {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  flex: 0 0 auto;
+}
+
+.poto-pastilha-ok {
+  background: rgba(47, 125, 79, 0.12);
+  color: var(--ok);
+}
+
+/* Falha de acionamento não é erro do sistema: é canal sem contato configurado,
+ * na maior parte dos casos. Âmbar e não vermelho — vermelho aqui competiria
+ * com a gravidade do chamado, que é o sinal que importa. */
+.poto-pastilha-falha {
+  background: rgba(214, 138, 46, 0.14);
+  color: var(--warn);
+}
+
+.poto-acoes {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+/* --- Cartão: peças novas (MEL-009) --------------------------------------- */
+
+.poto-card-hora {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.poto-card-local {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--muted);
+  margin: var(--space-xs) 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.poto-card-canal {
+  color: var(--faint);
+}
+
+/* Situação que ainda espera alguém ganha peso; o resto fica discreto. É a
+ * diferença entre "preciso agir" e "já foi tratado", lida de relance. */
+.poto-status-espera {
+  color: var(--rust);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.poto-card-abrir {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--faint);
+}
+
+/* A seta aponta para a direita **girando o `arrow_back` 180°**. Não há glifo de
+ * seta à direita no subset da fonte (MVP-041), e rebaixá-la de novo só por isso
+ * custaria outro ciclo de download e de versão de cache — ver a nota em
+ * `fontes.css`. Girar resolve sem novo ativo. */
+.poto-card-abrir [aria-hidden="true"] {
+  transform: rotate(180deg);
+}
+
+/* --- Totens (MEL-009) ---------------------------------------------------- */
+
+.poto-totens {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-md);
+  align-items: start;
+}
+
+.poto-totem-card {
+  background: var(--bg);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--space-md);
+}
+
+.poto-totem-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.poto-totem-card h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.poto-totem-abertos {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--rust);
+}
+
+.poto-totem-quieto {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--faint);
+}
+
+/* --- Barras e números (MEL-009) -----------------------------------------
+ *
+ * `<div>` com largura proporcional, e não biblioteca de gráficos: uma
+ * dependência para desenhar sete barras horizontais custaria mais que o
+ * problema. E num painel de plantão o número escrito ao lado é o que se lê —
+ * a barra só dá a proporção.
+ */
+
+.poto-barras {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--space-sm);
+}
+
+.poto-barra {
+  display: grid;
+  grid-template-columns: minmax(80px, 11ch) 1fr 3ch;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.poto-barra-rotulo {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poto-barra-trilho {
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.poto-barra-preenchimento {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  /* Mínimo visível: uma barra de 1 em 200 daria menos de um pixel e pareceria
+   * zero — e "um" é diferente de "nenhum" num painel de emergência. */
+  min-width: 2px;
+}
+
+.poto-barra-valor {
+  color: var(--ink);
+  font-weight: 600;
+  text-align: right;
+}
+
+.poto-numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-md);
+}
+
+.poto-numero {
+  background: var(--bg);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Só destaca quando o número **pede ação**: chamados em aberto e prazos
+ * estourados. Destacar todos os cinco seria não destacar nenhum. */
+.poto-numero-destaque {
+  border-color: var(--rust);
+}
+
+.poto-numero-valor {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 28px;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.poto-numero-destaque .poto-numero-valor {
+  color: var(--rust);
+}
+
+.poto-numero-rotulo {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.poto-numero-nota {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--faint);
 }

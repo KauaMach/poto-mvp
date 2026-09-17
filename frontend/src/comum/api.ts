@@ -11,8 +11,10 @@
  * funciona.
  */
 import type {
+  AuditoriaMidia,
   Chamado,
   ChamadaSessao,
+  ChamadoDetalhe,
   ConfigPublica,
   Dispositivo,
   EventoIn,
@@ -312,4 +314,25 @@ export function fecharChamadaAoSair(chamadoId: string): void {
     method: "DELETE",
     keepalive: true,
   }).catch(() => {});
+}
+
+/* --- Detalhe do chamado (MEL-009) ----------------------------------------- */
+
+/** O chamado com a história dele: triagem, notificações e transições.
+ *
+ * O endpoint existe desde a MVP-032; o painel só passou a consumi-lo agora.
+ */
+export function detalharChamado(chamadoId: string): Promise<ChamadoDetalhe> {
+  return requisitar<ChamadoDetalhe>(`/chamados/${encodeURIComponent(chamadoId)}`);
+}
+
+/** Quem abriu câmera ou microfone deste chamado, quando e por quanto tempo.
+ *
+ * Exposto na tela, e não só no banco, pelo mesmo motivo de o endpoint existir:
+ * auditoria que exige acesso ao servidor não é auditoria, é arquivo.
+ */
+export function auditoriaDeMidia(chamadoId: string): Promise<AuditoriaMidia[]> {
+  return requisitar<AuditoriaMidia[]>(
+    `/chamados/${encodeURIComponent(chamadoId)}/midia/auditoria`,
+  );
 }
