@@ -137,7 +137,20 @@ def test_redirect_da_raiz_e_temporario(banco, com_frontend):
     assert r.status_code == 307, "não pode ser 301/308 (permanente)"
 
 
-@pytest.mark.parametrize("rota", ["/totem", "/totem/", "/painel", "/painel/", "/rota-qualquer"])
+@pytest.mark.parametrize(
+    "rota",
+    [
+        "/totem",
+        "/totem/",
+        # A sub-ação "Descrever por voz". Do lado do backend ela não se
+        # distingue de qualquer outro caminho — quem decide é o `rotaAtual()`
+        # do frontend, verificado em `frontend/scripts/verificar-rotas.mjs`.
+        "/totem/voz",
+        "/painel",
+        "/painel/",
+        "/rota-qualquer",
+    ],
+)
 def test_rotas_da_aplicacao_recebem_o_index(banco, com_frontend, rota):
     """A aplicação é de página única: o roteamento acontece no cliente, então
     qualquer caminho desconhecido precisa entregar o index e deixar o React

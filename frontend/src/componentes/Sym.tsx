@@ -39,6 +39,7 @@ export type GlifoSym =
   | "info" /* trilha Outros / Ouvidoria */
   | "emergency" /* botão de pânico */
   | "check" /* confirmação */
+  | "mic" /* sub-ação "Descrever por voz" */
   | "arrow_back"; /* voltar */
 
 type Props = {

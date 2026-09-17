@@ -21,10 +21,14 @@ import { Shell } from "./Shell";
 import { AlertaAtivo } from "./telas/AlertaAtivo";
 import { Confirmacao } from "./telas/Confirmacao";
 import { Home } from "./telas/Home";
+import { Voz } from "./telas/Voz";
 import type { Trilha } from "./trilhas";
 
 type Estado =
   | { tela: "inicio" }
+  /* A sub-ação do blueprint de design. Ainda não funciona — a tela diz isso.
+   * Ver `telas/Voz.tsx`. */
+  | { tela: "voz" }
   | { tela: "enviando" }
   | { tela: "confirmado"; resultado: EventoOut; offline: boolean }
   /* O pânico tem tela própria: persistente, com cronômetro e escalonamento
@@ -33,9 +37,14 @@ type Estado =
   | { tela: "alerta"; alerta: PanicoOut; desde: Date; offline?: boolean }
   | { tela: "erro"; mensagem: string };
 
-export function Totem() {
+type Props = {
+  /** Tela em que abrir. Só `/totem/voz` usa isto; o padrão é a inicial. */
+  telaInicial?: "inicio" | "voz";
+};
+
+export function Totem({ telaInicial = "inicio" }: Props) {
   const online = useOnline();
-  const [estado, setEstado] = useState<Estado>({ tela: "inicio" });
+  const [estado, setEstado] = useState<Estado>({ tela: telaInicial });
   /* O intervalo vem do `/config` (`totem_offline_seg`, MVP-037). Até o totem
    * buscá-lo — e offline ele nunca busca — vale o mesmo default do backend, que
    * é a razão de a constante existir num lugar só. */
@@ -164,10 +173,15 @@ export function Totem() {
         </>
       }
     >
-      <Home
-        onEscolher={(t) => void acionar(t)}
-        enviando={estado.tela === "enviando"}
-      />
+      {estado.tela === "voz" ? (
+        <Voz onVoltar={voltar} />
+      ) : (
+        <Home
+          onEscolher={(t) => void acionar(t)}
+          onDescreverPorVoz={() => setEstado({ tela: "voz" })}
+          enviando={estado.tela === "enviando"}
+        />
+      )}
       {estado.tela === "erro" && (
         <p role="alert" className="poto-erro">
           {estado.mensagem}

@@ -349,3 +349,100 @@
   font-size: 13px;
   font-weight: 600;
 }
+
+/* --- "Descrever por voz" — a sub-ação do blueprint -------------------------
+ *
+ * Medidas do `DESIGN.md §12` do projeto de referência: círculo de 56px com
+ * borda, ícone em ferrugem, texto de 20px em `--muted`. Deliberadamente
+ * discreta: é uma **alternativa** às quatro trilhas, não uma quinta opção.
+ * Preenchê-la de ferrugem a colocaria competindo com o pânico, que é o único
+ * elemento em ferrugem cheia da tela (regra 60/30/10).
+ */
+
+.poto-voz-acao {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-md);
+  /* Altura de alvo igual às trilhas: um totem é operado com o dedo, e 56px de
+   * círculo mais o respiro passam folgado dos 64px de alvo mínimo (MVP-055). */
+  padding: var(--space-xs) var(--space-md);
+  margin: var(--space-lg) auto 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.poto-voz-circulo {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--line);
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+.poto-voz-acao:disabled {
+  opacity: 0.5;
+}
+
+@media (hover: hover) {
+  .poto-voz-acao:hover:not(:disabled) {
+    color: var(--ink);
+    background: var(--paper);
+  }
+  .poto-voz-acao:hover:not(:disabled) .poto-voz-circulo {
+    border-color: var(--muted);
+  }
+}
+
+/* --- A tela de voz (ainda indisponível) ----------------------------------- */
+
+.poto-voz-aviso {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  text-align: center;
+  margin-top: var(--space-xl);
+}
+
+.poto-voz-texto {
+  font-family: var(--font-ui);
+  font-size: 20px;
+  color: var(--ink);
+  max-width: 34ch;
+  margin: 0;
+}
+
+/* O segundo parágrafo diz o que fazer em lugar disso, e é ele que importa mais
+ * para quem chegou aqui precisando de ajuda. Menor, mas não apagado. */
+.poto-voz-secundario {
+  font-size: 17px;
+  color: var(--muted);
+  max-width: 42ch;
+}
+
+.poto-voz-voltar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-height: 64px;
+  padding: 0 var(--space-xl);
+  margin: var(--space-xl) auto 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--rust);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}

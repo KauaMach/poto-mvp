@@ -2,8 +2,9 @@
  * Ponto de entrada da aplicação.
  *
  * Duas rotas, servidas do mesmo build pelo backend:
- *   /totem   → totem   (tela do Galaxy Tab A11)
- *   /painel  → central (notebook/desktop)
+ *   /totem      → totem   (tela do Galaxy Tab A11)
+ *   /totem/voz  → totem, abrindo direto na sub-ação "Descrever por voz"
+ *   /painel     → central (notebook/desktop)
  *
  * A raiz (`/`) **redireciona** para `/totem`; o redirect vive no backend, em
  * `app/main.py`. Antes da MEL-003 a raiz *era* o totem e `/totem` funcionava só
@@ -34,6 +35,9 @@ const Galeria = import.meta.env.DEV
 export function App() {
   const rota = rotaAtual(window.location.pathname, import.meta.env.DEV);
   if (rota === "painel") return <Painel />;
+  /* `/totem/voz` monta o mesmo totem, só começando por outra tela — não é uma
+   * aplicação separada. */
+  if (rota === "voz") return <Totem telaInicial="voz" />;
   if (rota === "galeria" && Galeria) {
     return (
       <Suspense fallback={null}>

@@ -31,6 +31,14 @@ const CASOS = [
   // caminho              dev      esperado    explícito?
   ["/totem", false, "totem", true],
   ["/totem/", false, "totem", true],
+
+  /* A sub-ação "Descrever por voz" tem rota própria, para poder ser aberta
+   * direto. **A ordem no `rotaAtual` importa**: um `startsWith(CAMINHO_TOTEM)`
+   * antes desta linha engoliria `/totem/voz`. O caso `/totem/vozes` abaixo é o
+   * inverso — caminho parecido não é a rota de voz. */
+  ["/totem/voz", false, "voz", true],
+  ["/totem/voz/", false, "voz", true],
+  ["/totem/vozes", false, "totem", false],
   ["/painel", false, "painel", true],
   ["/painel/", false, "painel", true],
   ["/painel//", false, "painel", true],
@@ -60,12 +68,14 @@ try {
   const entrada = join(dir, "entrada.ts");
   writeFileSync(
     entrada,
-    `import { rotaAtual, CAMINHO_TOTEM } from "${RAIZ}src/rotas";
+    `import { rotaAtual, CAMINHO_TOTEM, CAMINHO_VOZ } from "${RAIZ}src/rotas";
      const casos = ${JSON.stringify(CASOS)};
      const saida = casos.map(([caminho, dev, esperado]) => ({
        caminho, dev, esperado, obtido: rotaAtual(caminho, dev),
      }));
-     process.stdout.write(JSON.stringify({ caminhoTotem: CAMINHO_TOTEM, saida }));`,
+     process.stdout.write(JSON.stringify({
+       caminhoTotem: CAMINHO_TOTEM, caminhoVoz: CAMINHO_VOZ, saida,
+     }));`,
   );
 
   const saida = join(dir, "saida.mjs");
@@ -75,7 +85,7 @@ try {
     { stdio: ["ignore", "ignore", "inherit"] },
   );
 
-  const { caminhoTotem, saida: resultados } = JSON.parse(
+  const { caminhoTotem, caminhoVoz, saida: resultados } = JSON.parse(
     execFileSync(process.execPath, [saida], { encoding: "utf8", cwd: RAIZ }),
   );
 
@@ -92,6 +102,11 @@ try {
 
   /* O caminho canônico não pode divergir do que o backend redireciona para.
    * Se alguém mudar um dos dois, o outro fica apontando para o vazio. */
+  if (caminhoVoz !== "/totem/voz") {
+    falhas += 1;
+    console.error(`✗ CAMINHO_VOZ é "${caminhoVoz}", esperado "/totem/voz"`);
+  }
+
   if (caminhoTotem !== "/totem") {
     falhas += 1;
     console.error(

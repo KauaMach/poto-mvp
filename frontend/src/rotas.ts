@@ -16,10 +16,18 @@
  * totem, em vez de duas que fazem a mesma coisa.
  */
 
-export type Rota = "totem" | "painel" | "galeria";
+export type Rota = "totem" | "voz" | "painel" | "galeria";
 
 /** Caminho canônico do totem. O backend redireciona `/` para cá. */
 export const CAMINHO_TOTEM = "/totem";
+
+/** A sub-ação "Descrever por voz" do blueprint de design.
+ *
+ * Existe como rota própria, e não só como estado interno do totem, para poder
+ * ser aberta direto — é o que permite conferir a tela sem passar pela inicial.
+ * O botão da tela inicial navega por **estado**, como o resto do totem: o kiosk
+ * não muda de URL durante o uso. */
+export const CAMINHO_VOZ = "/totem/voz";
 
 /**
  * Qual tela o caminho pede.
@@ -32,6 +40,9 @@ export function rotaAtual(caminho: string, dev: boolean): Rota {
   const limpo = caminho.replace(/\/+$/, "");
 
   if (limpo === "/painel") return "painel";
+  /* Antes do `/totem`: o caminho mais específico primeiro. Invertendo, `/totem`
+   * casaria com a normalização e `/totem/voz` nunca seria alcançado. */
+  if (limpo === CAMINHO_VOZ) return "voz";
   if (limpo === CAMINHO_TOTEM) return "totem";
 
   /* `/galeria` só existe em desenvolvimento. Quem chama passa

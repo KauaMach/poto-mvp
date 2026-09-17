@@ -29,6 +29,7 @@ poderia fazer mais ou melhor)
 | [MEL-005](#mel-005--painel-botão-iniciar-videochamada-e-captura-da-webcam) | Painel: botão "Iniciar videochamada" e captura da webcam | Melhoria | Alta | ✅ **Implementado** (18/09) |
 | [MEL-006](#mel-006--totem-o-operador-aparece-na-tela-de-alerta-ativo) | Totem: o operador aparece na tela de alerta ativo | Melhoria | Alta | ✅ **Implementado** (18/09) |
 | [MEL-007](#mel-007--áudio-da-central-para-o-totem) | Áudio da central para o totem | Melhoria | Média | Proposto |
+| [MEL-008](#mel-008--sub-ação-descrever-por-voz-do-blueprint-de-design) | Sub-ação "Descrever por voz" do blueprint de design | Melhoria | Baixa | ✅ **Implementado** (18/09), sem função |
 
 ---
 
@@ -700,6 +701,58 @@ chega à central hoje (MVP-076).
 Fica separado do vídeo de propósito: o vídeo entrega o essencial do pedido ("ver alguém"),
 e áudio ao vivo em HTTP por quadros tem problemas próprios — sincronia, continuidade,
 buffer — que não devem atrasar o vídeo.
+
+---
+
+## MEL-008 — Sub-ação "Descrever por voz" do blueprint de design
+
+**Tipo:** Melhoria · **Prioridade sugerida:** Baixa · **Levantado por:** Kaua, 18/09
+**Status:** ✅ **Implementado em 18/09 — o caminho, não a função.** Voz segue fora do
+escopo (`PLAN.md §3`: STT/Whisper é P2).
+
+### O que era
+
+O `DESIGN.md` do projeto de referência traz, no rodapé da tela inicial, entre a grade de
+trilhas e o pânico, uma sub-ação **"Descrever por voz"** (ícone de microfone em círculo de
+56px + texto). O MVP nunca a implementou, porque voz foi cortada do escopo — mas a tela
+ficou divergindo do blueprint aprovado.
+
+### O que ficou
+
+- **O botão na `Home`**, nas medidas do blueprint. Deliberadamente discreto: ícone
+  contornado, texto em `--muted`, sem preenchimento. É uma **alternativa** às quatro
+  trilhas, não uma quinta opção — preenchê-la de ferrugem a colocaria competindo com o
+  pânico, que é o único elemento em ferrugem cheia da tela (regra 60/30/10).
+- **Uma tela de destino (`telas/Voz.tsx`) que diz que não funciona**, em vez de um botão
+  inerte. Num totem de emergência, um botão que não responde é pior que um botão ausente:
+  quem toca e não vê nada conclui que o aparelho travou, e desiste das trilhas que
+  funcionam. A tela diz o que fazer em lugar disso e devolve para as opções.
+- **Nenhuma promessa de gravação.** Sem indicador de "gravando", sem animação de microfone
+  ativo. Fingir captura numa tela de socorro seria o pior tipo de engano.
+- **Rota própria `/totem/voz`**, para poder ser aberta direto. O botão navega por
+  **estado**, como o resto do totem — o kiosk não muda de URL durante o uso.
+
+### A fonte teve de ser rebaixada
+
+`mic` **não estava** no subset. A fonte Material Symbols é servida subsetada pelos nomes
+que o `GlifoSym` enumera (MVP-041), e pedir um glifo ausente **renderiza o nome como
+texto** — o botão mostraria a palavra "mic". Foi o mesmo obstáculo que na MEL-005, onde a
+saída foi não usar ícone.
+
+Aqui valeu rebaixar: novo `icon_names=` no Google Fonts com os 7 originais + `mic`. Custo
+medido: **2.396 → 2.552 bytes, +156**. Verificado com `fontTools` que as 9 ligaduras estão
+no arquivo que vai para `dist/`.
+
+> **Um falso alarme meu no caminho, que vale registrar.** Ao conferir as ligaduras, o
+> `arrow_back` apareceu como ausente **nas duas** versões — e ele é usado no botão "Voltar
+> ao início" da tela de pânico. Parecia bug em produção. Não era: nos nomes de glifo o
+> underscore é escrito, então ele está lá como `arrowunderscoreback`. A lição é a mesma de
+> sempre — conferir o dado bruto antes de reportar.
+
+### Quando a voz entrar no escopo
+
+Esta tela é onde o fluxo de gravação nasce. O caminho até ela já existe; é só o conteúdo
+que muda.
 
 ---
 

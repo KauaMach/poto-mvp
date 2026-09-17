@@ -8,17 +8,28 @@
  * O pânico fica no rodapé e é o único elemento em ferrugem cheia da tela, pela
  * regra 60/30/10. Ele não é uma quinta trilha: é o caminho para quem não
  * consegue nem escolher.
+ *
+ * Abaixo da grade vem **"Descrever por voz"**, a sub-ação que o blueprint de
+ * design previa (`DESIGN.md §12`) e que o MVP não tinha. Ela é deliberadamente
+ * discreta — ícone contornado, texto em `--muted`, sem preenchimento: é uma
+ * alternativa, não uma quinta opção competindo com as quatro trilhas. Quem está
+ * em emergência deve tocar numa trilha; quem não sabe qual escolher pode falar.
+ *
+ * **Ela ainda não funciona**, e a tela de destino diz isso (`telas/Voz.tsx`).
+ * Voz está fora do escopo do MVP (`PLAN.md §3`).
  */
 import { Choice } from "../../componentes/Choice";
+import { Sym } from "../../componentes/Sym";
 import { TRILHAS, type Trilha } from "../trilhas";
 
 type Props = {
   onEscolher: (trilha: Trilha) => void;
+  onDescreverPorVoz: () => void;
   /** Desabilita durante um envio — sem isto dois toques geram dois chamados. */
   enviando?: boolean;
 };
 
-export function Home({ onEscolher, enviando = false }: Props) {
+export function Home({ onEscolher, onDescreverPorVoz, enviando = false }: Props) {
   return (
     <>
       <h1 className="poto-titulo">Como podemos ajudar?</h1>
@@ -43,6 +54,22 @@ export function Home({ onEscolher, enviando = false }: Props) {
           />
         ))}
       </div>
+
+      {/* A sub-ação do blueprint. `aria-label` **contém** o texto visível
+          (WCAG 2.5.3): quem usa controle por voz diz "descrever por voz" e o
+          comando precisa casar com o rótulo lido. */}
+      <button
+        type="button"
+        className="poto-voz-acao"
+        disabled={enviando}
+        onClick={onDescreverPorVoz}
+        aria-label="Descrever por voz — ainda não disponível"
+      >
+        <span aria-hidden="true" className="poto-voz-circulo">
+          <Sym nome="mic" tamanho="md" cor="var(--rust)" />
+        </span>
+        Descrever por voz
+      </button>
     </>
   );
 }
