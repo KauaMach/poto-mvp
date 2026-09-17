@@ -97,7 +97,24 @@ def nome_canal(canal: str) -> str:
 
 
 # Acionados em paralelo no broadcast de pânico (MVP-031).
-CANAIS_INTERNOS = ["csv", "sala_lilas"]
+#
+# **Só o CSV, e a Sala Lilás saiu daqui de propósito** (COR-001). O pânico é um
+# pedido genérico — "preciso de ajuda agora" — e não carrega texto nenhum
+# (`_registro_panico` fixa `texto_livre=None`), então o sistema não tem **nenhum
+# sinal** de que o caso seja de violência de gênero. Pode ser um assalto, alguém
+# passando mal, uma briga, um princípio de incêndio.
+#
+# Acionar a Sala Lilás em todo pânico mobilizava um serviço especializado e de
+# capacidade limitada para casos fora da alçada dele, atrasando a resposta dela
+# justamente quando o caso *fosse* de violência de gênero. E era redundante: a
+# trilha `mulher` do totem já aciona a Sala Lilás especificamente, em modo
+# discreto — quem precisa daquele canal tem um caminho dedicado e mais
+# apropriado, que não anuncia na tela o que foi acionado.
+#
+# A lista continua sendo lista, e o acionamento continua em paralelo: uma
+# instituição pode configurar mais de um canal interno. O que mudou é o padrão
+# deixar de presumir o motivo de um pânico.
+CANAIS_INTERNOS = ["csv"]
 
 # Autoridades do estado, oferecidas para escalonamento MANUAL na tela de alerta
 # ativo. O sistema nunca disca para elas sozinho: registra que um humano

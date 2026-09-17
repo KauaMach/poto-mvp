@@ -74,7 +74,26 @@ def test_nome_canal_degrada_para_a_chave():
 
 
 def test_broadcast_de_panico_aciona_os_canais_internos():
-    assert config.CANAIS_INTERNOS == ["csv", "sala_lilas"]
+    """Só o CSV (COR-001).
+
+    A Sala Lilás saiu daqui porque o pânico não diz qual é a emergência — e
+    mobilizar um serviço especializado sem saber o motivo atrasa a resposta dele
+    no caso que é de fato da alçada dele. A trilha `mulher` continua acionando a
+    Sala Lilás, que é o caminho dedicado e discreto.
+    """
+    assert config.CANAIS_INTERNOS == ["csv"]
+    assert "sala_lilas" not in config.CANAIS_INTERNOS
+
+
+def test_sala_lilas_segue_no_catalogo_e_com_contato():
+    """Tirá-la do broadcast de pânico não é tirá-la do sistema.
+
+    Ela continua no catálogo de canais e continua sendo destino da trilha
+    `mulher` — se este teste falhar junto com o de cima, alguém removeu o canal
+    em vez de removê-lo do pânico.
+    """
+    assert "sala_lilas" in config.CANAIS
+    assert "sala_lilas" in config._CONTATOS
 
 
 def test_escalonamento_manual_oferece_as_autoridades_do_estado():

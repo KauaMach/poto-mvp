@@ -856,6 +856,22 @@
   - Idempotente por `evento_id`
 - **Como validar:** `uv run pytest tests/test_api_panico.py` — 42 testes
 
+> **Atualização de 18/09 — COR-001: a Sala Lilás saiu do broadcast de pânico.**
+> `CANAIS_INTERNOS` passou de `["csv", "sala_lilas"]` para `["csv"]`. O motivo: o pânico
+> não carrega texto (`_registro_panico` fixa `texto_livre=None`), então o sistema não tem
+> **nenhum sinal** de que o caso seja de violência de gênero — pode ser um assalto, alguém
+> passando mal, uma briga. Acionar a Sala Lilás em todo pânico mobilizava um serviço
+> especializado e de capacidade limitada para casos fora da alçada dele, atrasando a
+> resposta dela justamente quando o caso *fosse* o dela. E era redundante: a trilha
+> `mulher` já aciona a Sala Lilás, em modo discreto, que é o caminho apropriado.
+>
+> O `gather` e a contenção de erro ficaram: a lista é configuração, não constante — uma
+> instituição pode ter mais de um canal interno. Os testes de paralelismo e de contenção
+> de falha passaram a **injetar** um segundo canal por `monkeypatch`, protegendo o
+> mecanismo sem fingir que o padrão tem dois.
+>
+> Detalhes e alternativas em [`docs/correcoes-e-melhorias.md`](docs/correcoes-e-melhorias.md).
+>
 > **Ao contrário de `/eventos`, aqui a notificação é aguardada.** Não é inconsistência: a
 > resposta carrega `resultados`, e é por eles que a tela decide se oferece os botões de
 > escalonamento. Como os canais correm em paralelo, o teto é o de um provider e não a

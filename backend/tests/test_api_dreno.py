@@ -281,7 +281,7 @@ def test_panico_enfileirado_drena_como_panico(cliente):
 
     assert resposta["status"] == "alerta_ativo"
     assert resposta["gravidade"] == Gravidade.risco_imediato
-    assert len(resposta["resultados"]) == 2
+    assert len(resposta["resultados"]) == len(config.CANAIS_INTERNOS)
 
 
 def test_panico_enfileirado_nao_duplica(cliente):

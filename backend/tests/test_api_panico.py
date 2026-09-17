@@ -187,7 +187,7 @@ def test_estado_inicial_registrado_no_log(cliente):
 # ===========================================================================
 
 
-def test_os_dois_canais_internos_sao_acionados(cliente):
+def test_os_canais_internos_configurados_sao_acionados(cliente):
     r = acionar(cliente)
 
     canais_acionados = [
@@ -196,7 +196,53 @@ def test_os_dois_canais_internos_sao_acionados(cliente):
     assert sorted(canais_acionados) == sorted(config.CANAIS_INTERNOS)
 
 
-def test_resultados_trazem_os_dois_canais(cliente):
+def test_panico_nao_aciona_a_sala_lilas(cliente):
+    """**A garantia da COR-001**, dita de forma positiva e não por omissão.
+
+    O pânico não carrega texto: o sistema não tem sinal nenhum de que o caso
+    seja de violência de gênero. Pode ser um assalto, alguém passando mal, uma
+    briga. Acionar a Sala Lilás em todo pânico mobilizava um serviço
+    especializado para casos fora da alçada dele.
+
+    Este teste existe separado do de cima de propósito. Aquele compara com
+    `config.CANAIS_INTERNOS` e continuaria passando se alguém devolvesse a Sala
+    Lilás à lista — este falha.
+    """
+    r = acionar(cliente)
+
+    acionados = {n["canal"] for n in db.listar_notificacoes(r.json()["chamado_id"])}
+    assert "sala_lilas" not in acionados
+    assert acionados == {"csv"}
+
+
+def test_trilha_mulher_continua_acionando_a_sala_lilas(cliente):
+    """O par necessário do teste acima.
+
+    Tirar a Sala Lilás do pânico não pode tê-la tirado do caminho que é o dela.
+    Sem este teste, "a Sala Lilás nunca é acionada" passaria pelo teste de cima
+    — e seria uma regressão grave, não uma correção.
+
+    A cobertura principal desse caminho está em `test_roteador.py` e
+    `test_api_eventos.py`; aqui a asserção é sobre a **distinção** entre os dois
+    caminhos, que é o que a COR-001 criou.
+    """
+    cliente.post(
+        "/api/v1/eventos",
+        json={
+            "evento_id": str(uuid4()),
+            "totem_id": "TOTEM-TESTE",
+            "tipo_ocorrencia": "mulher",
+        },
+    )
+
+    chamado = db.listar_chamados()[0]
+    assert chamado["tipo_ocorrencia"] == TipoOcorrencia.mulher
+    # Fora do expediente o roteador manda para a `central_180`, que é 24h — o
+    # teste aceita os dois destinos legítimos em vez de depender do relógio.
+    assert chamado["canal_roteado"] in {"sala_lilas", "central_180"}
+
+
+def test_resultados_trazem_os_canais_acionados(cliente):
     resultados = acionar(cliente).json()["resultados"]
 
     assert [r["canal"] for r in resultados] == list(config.CANAIS_INTERNOS)
@@ -206,7 +252,7 @@ def test_resultados_trazem_os_dois_canais(cliente):
 def test_resultados_trazem_o_nome_legivel(cliente):
     """A tela mostra "CSV / PREUNI", não "csv"."""
     resultados = acionar(cliente).json()["resultados"]
-    assert {r["nome"] for r in resultados} == {"CSV / PREUNI", "Sala Lilás"}
+    assert {r["nome"] for r in resultados} == {"CSV / PREUNI"}
 
 
 async def test_canais_sao_acionados_em_paralelo(cliente, monkeypatch):
@@ -215,7 +261,15 @@ async def test_canais_sao_acionados_em_paralelo(cliente, monkeypatch):
     A barreira só libera quando **os dois** acionamentos chegam nela. Numa
     implementação sequencial o primeiro esperaria para sempre — o `wait_for`
     converte isso em falha em vez de travar a suíte.
+
+    **Os dois canais são injetados por `monkeypatch`, e isso é deliberado.** Em
+    produção `CANAIS_INTERNOS` tem um canal só depois da COR-001, e com um canal
+    não há paralelismo a provar. Mas o `gather` continua no código porque a lista
+    é configuração: uma instituição pode ter mais de um canal interno. Este teste
+    protege **o mecanismo**, para o dia em que alguém configurar o segundo — sem
+    fingir que a configuração padrão tem dois.
     """
+    monkeypatch.setattr(config, "CANAIS_INTERNOS", ["csv", "sala_lilas"])
     barreira = asyncio.Barrier(2)
 
     async def notificar_sincronizado(chamado, canal, **kwargs):
@@ -232,8 +286,13 @@ async def test_canais_sao_acionados_em_paralelo(cliente, monkeypatch):
 
 
 def test_falha_de_um_canal_nao_impede_o_outro(cliente, monkeypatch):
-    """Num pânico, ficar sem o CSV porque a Sala Lilás está mal configurada
-    seria o pior resultado possível."""
+    """Ficar sem o CSV porque um segundo canal está mal configurado seria o pior
+    resultado possível num pânico.
+
+    Como o de paralelismo, injeta um segundo canal: a propriedade é sobre a
+    contenção de falha do `gather`, que só é observável com mais de um canal.
+    """
+    monkeypatch.setattr(config, "CANAIS_INTERNOS", ["csv", "sala_lilas"])
     monkeypatch.setattr(config, "_CONTATOS", {"csv": CONTATO_CSV})
 
     resultados = acionar(cliente).json()["resultados"]
@@ -264,7 +323,11 @@ def test_todos_os_canais_falharem_nao_apaga_o_chamado(cliente, monkeypatch):
 
     assert r.status_code == 201
     assert db.obter_chamado(r.json()["chamado_id"]) is not None
-    assert len(db.listar_notificacoes(r.json()["chamado_id"])) == 2
+    # Uma tentativa por canal configurado — não um número fixo, que ficaria
+    # errado no dia em que a lista mudar de tamanho (foi o que a COR-001 fez).
+    assert len(db.listar_notificacoes(r.json()["chamado_id"])) == len(
+        config.CANAIS_INTERNOS
+    )
 
 
 async def test_central_e_avisada(cliente, painel):
@@ -408,7 +471,7 @@ def test_reenvio_nao_aciona_de_novo(cliente):
     cliente.post(ROTA, json=dados)
 
     chamado_id = db.listar_chamados()[0]["chamado_id"]
-    assert len(db.listar_notificacoes(chamado_id)) == 2
+    assert len(db.listar_notificacoes(chamado_id)) == len(config.CANAIS_INTERNOS)
     assert len(db.listar_chamados()) == 1
 
 
@@ -425,14 +488,16 @@ def test_reenvio_reconstroi_os_resultados(cliente):
 
 
 def test_reenvio_reconstroi_falhas_tambem(cliente, monkeypatch):
-    monkeypatch.setattr(config, "_CONTATOS", {"csv": CONTATO_CSV})
+    """Sem contato configurado, o canal falha — e o reenvio tem que devolver a
+    falha, não um sucesso inventado nem uma lista vazia."""
+    monkeypatch.setattr(config, "_CONTATOS", {})
     dados = corpo()
 
     cliente.post(ROTA, json=dados)
     segundo = cliente.post(ROTA, json=dados)
 
     por_canal = {r["canal"]: r["sucesso"] for r in segundo.json()["resultados"]}
-    assert por_canal == {"csv": True, "sala_lilas": False}
+    assert por_canal == {"csv": False}
 
 
 def test_reenvio_ainda_oferece_escalonamento(cliente):

@@ -293,7 +293,9 @@ def test_ciclo_do_panico(cliente):
     cid = criado["chamado_id"]
 
     assert criado["status"] == "alerta_ativo"
-    assert len(criado["resultados"]) == 2
+    # Um resultado por canal interno configurado (COR-001 deixou só o CSV); os
+    # 4 do escalonamento são as autoridades do estado, e esses não mudaram.
+    assert len(criado["resultados"]) == len(config.CANAIS_INTERNOS)
     assert len(criado["escalonamento_disponivel"]) == 4
 
     cliente.post(f"/api/v1/chamados/{cid}/escalonar", json={"canal": "pm_190"})

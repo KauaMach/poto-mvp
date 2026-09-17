@@ -253,9 +253,15 @@ async def _acionar_em_paralelo(chamado: dict) -> list[CanalResultado]:
     """Aciona `CANAIS_INTERNOS` ao mesmo tempo, contendo a falha de cada um.
 
     `return_exceptions=True` pelo mesmo motivo do hub: a falha de um canal não
-    pode impedir que o outro seja acionado **nem** que seja registrado. Num
-    pânico, ficar sem o CSV porque a Sala Lilás está mal configurada seria o
-    pior resultado possível.
+    pode impedir que outro seja acionado **nem** que seja registrado. Ficar sem o
+    CSV porque um segundo canal está mal configurado seria o pior resultado
+    possível num pânico.
+
+    Hoje `CANAIS_INTERNOS` tem **um** canal só (COR-001: a Sala Lilás saiu do
+    broadcast de pânico, porque o pânico não diz qual é a emergência). O
+    `gather` e a contenção de erro continuam aqui porque a lista é configuração,
+    não constante de código: uma instituição pode ter mais de um canal interno,
+    e é ela que decide.
     """
     canais_internos = list(config.CANAIS_INTERNOS)
     retornos = await asyncio.gather(

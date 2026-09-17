@@ -20,7 +20,7 @@ poderia fazer mais ou melhor)
 
 | ID | Item | Tipo | Prioridade sugerida | Status |
 |---|---|---|---|---|
-| [COR-001](#cor-001--pânico-não-deveria-acionar-a-sala-lilás-automaticamente) | Pânico não deveria acionar a Sala Lilás automaticamente | Correção | Alta | Proposto |
+| [COR-001](#cor-001--pânico-não-deveria-acionar-a-sala-lilás-automaticamente) | Pânico não deveria acionar a Sala Lilás automaticamente | Correção | Alta | ✅ **Implementado** (18/09) |
 | [MEL-001](#mel-001--canal-de-vídeo-bidirecional-da-central-para-o-totem) | Canal de vídeo bidirecional da central para o totem | Melhoria | A discutir | Proposto |
 | [MEL-002](#mel-002--pré-requisito-de-mel-001-servir-a-aplicação-por-https) | Pré-requisito de MEL-001: servir a aplicação por HTTPS | Melhoria | A discutir | Proposto |
 | [MEL-003](#mel-003--rota-explícita-totem-em-vez-de-a-raiz-ser-o-totem-por-padrão) | Rota explícita `/totem`, em vez de a raiz ser o totem por padrão | Melhoria | Média | Proposto |
@@ -30,6 +30,8 @@ poderia fazer mais ou melhor)
 ## COR-001 — Pânico não deveria acionar a Sala Lilás automaticamente
 
 **Tipo:** Correção · **Prioridade sugerida:** Alta · **Levantado por:** Kaua, 18/09
+**Status:** ✅ **Implementado em 18/09.** `CANAIS_INTERNOS = ["csv"]`. Ver a nota da
+MVP-031 no [`TASKS.md`](../TASKS.md) e a correção de estimativa no fim desta entrada.
 
 ### Comportamento atual
 
@@ -83,7 +85,8 @@ errado nos outros casos.
 |---|---|
 | `backend/app/config.py` | `CANAIS_INTERNOS` deixa de incluir `"sala_lilas"` |
 | `backend/app/api/eventos.py` | nenhuma mudança de lógica — `_acionar_em_paralelo` já itera sobre `CANAIS_INTERNOS`, então tirar o canal da lista basta |
-| `backend/tests/test_api_panico.py` | **4 testes afirmam o comportamento atual e quebrariam**: `test_os_dois_canais_internos_sao_acionados`, `test_resultados_trazem_os_dois_canais`, `test_resultados_trazem_o_nome_legivel` (espera `{"CSV / PREUNI", "Sala Lilás"}`), `test_falha_de_um_canal_nao_impede_o_outro` (espera dois canais nos resultados). Precisam ser reescritos para refletir só o CSV — e vale manter um teste que prove que a Sala Lilás **não** é chamada, para a garantia ficar explícita e não apenas ausente |
+| `backend/tests/test_api_panico.py` | 6 testes quebraram (ver correção de estimativa abaixo) |
+| outros 4 arquivos de teste | `test_config.py`, `test_api_chamados.py`, `test_api_contrato.py`, `test_api_dreno.py` — **eu não os havia mapeado** |
 
 ### O que não muda
 
@@ -94,6 +97,45 @@ errado nos outros casos.
   mesmos quatro.
 - O pânico continua acionando **o CSV**, que é segurança geral e faz sentido para
   qualquer emergência dentro do campus.
+
+### Correção de estimativa — eu errei o impacto nos testes
+
+Quando escrevi esta entrada, listei **4 testes** em `test_api_panico.py` como o impacto.
+Ao implementar, quebraram **10**, em **5 arquivos**:
+
+| arquivo | quantos | o que afirmavam |
+|---|---|---|
+| `test_api_panico.py` | 6 | nome legível dos dois canais · barreira de paralelismo com 2 vagas · contenção de falha entre dois canais · três contagens fixas em `== 2` |
+| `test_config.py` | 1 | `CANAIS_INTERNOS == ["csv", "sala_lilas"]` — a asserção canônica da lista, que eu esqueci que existia |
+| `test_api_chamados.py` | 1 | o detalhe do chamado traz duas notificações |
+| `test_api_contrato.py` | 1 | `len(resultados) == 2` no ciclo completo do pânico |
+| `test_api_dreno.py` | 1 | `len(resultados) == 2` no pânico drenado da fila offline |
+
+Dois deles — o de paralelismo (`asyncio.Barrier(2)`) e o de contenção de falha — não
+podiam ser simplesmente "corrigidos para um canal": **com um canal não existe paralelismo
+nem contenção a observar.** Passaram a injetar um segundo canal por `monkeypatch`, o que
+protege o mecanismo (a lista é configuração; uma instituição pode ter dois) sem fingir que
+o padrão tem dois.
+
+As contagens fixas em `== 2` foram trocadas por `len(config.CANAIS_INTERNOS)`: era o
+número literal que as tornou frágeis, e deixá-lo lá só adiaria o mesmo problema.
+
+**Lição para as próximas entradas deste documento:** procurar a constante em todo o
+`tests/`, não só no arquivo óbvio da feature. `grep -rn CANAIS_INTERNOS tests/` teria
+mostrado o `test_config.py` em um segundo.
+
+### Três testes novos, que a correção exigiu
+
+- `test_panico_nao_aciona_a_sala_lilas` — a garantia dita de forma **positiva**. O teste
+  que compara com `config.CANAIS_INTERNOS` continuaria passando se alguém devolvesse a
+  Sala Lilás à lista; este falha.
+- `test_trilha_mulher_continua_acionando_a_sala_lilas` — o par necessário. Sem ele,
+  "a Sala Lilás nunca é acionada" passaria, e isso seria regressão grave, não correção.
+- `test_sala_lilas_segue_no_catalogo_e_com_contato` — tirá-la do pânico não é tirá-la do
+  sistema.
+
+Verificado por mutação nas duas direções: devolver a Sala Lilás ao broadcast quebra 3
+testes; fazer a trilha `mulher` deixar de apontar para ela quebra 1.
 
 ### Alternativa considerada e não recomendada
 

@@ -246,15 +246,13 @@ def test_detalhe_traz_as_notificacoes(cliente):
     assert detalhe["notificacoes"][0]["sucesso"] is True
 
 
-def test_detalhe_do_panico_traz_os_dois_canais(cliente):
+def test_detalhe_do_panico_traz_os_canais_acionados(cliente):
+    """Um registro por canal interno configurado — hoje só o CSV (COR-001)."""
     criado = entrar_em_panico(cliente)
 
     detalhe = cliente.get(f"{LISTA}/{criado['chamado_id']}").json()
 
-    assert sorted(n["canal"] for n in detalhe["notificacoes"]) == [
-        "csv",
-        "sala_lilas",
-    ]
+    assert sorted(n["canal"] for n in detalhe["notificacoes"]) == ["csv"]
 
 
 def test_notificacao_traz_o_nome_legivel(cliente):
