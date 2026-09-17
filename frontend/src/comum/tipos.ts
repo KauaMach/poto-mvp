@@ -117,7 +117,12 @@ export type EventoWS =
   | { evento: "conectado"; dados: { paineis: number; servidor: string } }
   | { evento: "ping"; dados: Record<string, never> }
   | { evento: "novo_chamado"; dados: Chamado }
-  | { evento: "atualizado"; dados: Chamado };
+  | { evento: "atualizado"; dados: Chamado }
+  /* MEL-006. No canal do totem (`/ws/chamado/{id}`) estes chegam projetados —
+   * só `chamado_id`, `status` e `stream_url` (`CAMPOS_TOTEM`). É assim que a
+   * tela de alerta descobre onde buscar o vídeo do operador. */
+  | { evento: "chamada_iniciada"; dados: { chamado_id: string; stream_url: string } }
+  | { evento: "chamada_encerrada"; dados: { chamado_id: string } };
 
 /* --- Mídia (MVP-073 / MVP-077) ------------------------------------------- */
 

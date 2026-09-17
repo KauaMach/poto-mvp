@@ -578,8 +578,15 @@ async def test_totem_recebe_so_id_e_status(hub):
     await hub.broadcast("atualizado", dict(CHAMADO_COMPLETO))
 
     (mensagem,) = totem.recebidas
-    assert set(mensagem["dados"]) == {"chamado_id", "status"}
+    # Lista **explícita**, não `set(CAMPOS_TOTEM)`: o ponto de uma allowlist é
+    # que ampliá-la seja uma decisão visível. Comparar com a própria constante
+    # faria o teste concordar com qualquer campo que alguém acrescentasse.
+    #
+    # `stream_url` entrou na MEL-006 — é como o totem descobre onde buscar o
+    # vídeo do operador. Vem `None` em `atualizado`, que não tem esse campo.
+    assert set(mensagem["dados"]) == {"chamado_id", "status", "stream_url"}
     assert mensagem["dados"]["status"] == "notificado"
+    assert mensagem["dados"]["stream_url"] is None
 
 
 async def test_totem_nao_recebe_evento_de_outro_chamado(hub):

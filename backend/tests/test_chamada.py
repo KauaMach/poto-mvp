@@ -439,3 +439,64 @@ async def test_stream_para_na_expiracao(cliente):
     partes = [p async for p in api._multipart_chamada(RequisicaoFalsa(), s)]
 
     assert partes == []
+
+
+# ---------------------------------------------------------------------------
+# O totem descobre a chamada pelo WebSocket — MEL-006
+# ---------------------------------------------------------------------------
+#
+# O totem não tem credencial (lacuna da MVP-040), então não pode consultar
+# `/chamados/{id}`. O caminho é o canal com escopo da COR-002 — e a `stream_url`
+# está na allowlist `CAMPOS_TOTEM` justamente para poder passar por ele.
+
+
+def test_totem_recebe_a_url_do_stream(cliente):
+    """**O elo que faz a MEL-006 funcionar.**
+
+    Sem este evento o totem não teria como descobrir onde buscar o vídeo: ele
+    não pode consultar a API do painel, e adivinhar a URL é impossível (o id da
+    sessão é `token_urlsafe`).
+    """
+    cid = em_panico(cliente)
+
+    with cliente.websocket_connect(f"/api/v1/ws/chamado/{cid}") as ws:
+        ws.receive_json()  # conectado
+        corpo = cliente.post(f"/api/v1/chamados/{cid}/chamada").json()
+        evento = ws.receive_json()
+
+    assert evento["evento"] == "chamada_iniciada"
+    assert evento["dados"]["stream_url"] == corpo["stream_url"]
+
+
+def test_totem_e_avisado_do_encerramento(cliente):
+    """Sem o aviso, o `<img>` do totem ficaria montado contra um stream morto —
+    a última imagem do operador congelada, parecendo que alguém ainda está ali.
+    """
+    cid = em_panico(cliente)
+
+    with cliente.websocket_connect(f"/api/v1/ws/chamado/{cid}") as ws:
+        ws.receive_json()
+        cliente.post(f"/api/v1/chamados/{cid}/chamada")
+        ws.receive_json()  # iniciada
+        cliente.delete(f"/api/v1/chamados/{cid}/chamada")
+        evento = ws.receive_json()
+
+    assert evento["evento"] == "chamada_encerrada"
+    assert evento["dados"]["chamado_id"] == cid
+
+
+def test_o_evento_da_chamada_nao_vaza_para_outro_chamado(cliente):
+    """O escopo da COR-002 valendo para o evento novo: a `stream_url` carrega o
+    token da sessão, e ele só deve chegar ao totem daquele chamado."""
+    cid_a = em_panico(cliente)
+    cid_b = em_panico(cliente)
+
+    with cliente.websocket_connect(f"/api/v1/ws/chamado/{cid_b}") as ws:
+        ws.receive_json()
+        cliente.post(f"/api/v1/chamados/{cid_a}/chamada")
+        # Um `atualizado` do próprio B para provar que o canal está vivo e que a
+        # ausência do evento de A não é o socket estar mudo.
+        cliente.post(f"/api/v1/chamados/{cid_b}/ack")
+        evento = ws.receive_json()
+
+    assert evento["evento"] == "atualizado"

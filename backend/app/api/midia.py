@@ -27,6 +27,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
 from .. import midia
+from ..hub import hub
 from ..midia import camera, microfone
 from ..midia import sessao as sessoes
 from ..midia.chamada import TAMANHO_MAXIMO, SemQuadro, repasse
@@ -92,7 +93,7 @@ def fechar_midia(chamado_id: str, sessao: str | None = None) -> None:
 
 
 @router.post("/chamados/{chamado_id}/chamada", response_model=ChamadaOut, status_code=201)
-def abrir_chamada(chamado_id: str, request: Request) -> ChamadaOut:
+async def abrir_chamada(chamado_id: str, request: Request) -> ChamadaOut:
     """Autoriza uma videochamada da central para o totem (MEL-004).
 
     O inverso de `abrir_midia`: lá a central pede para **ver** o local; aqui ela
@@ -105,6 +106,15 @@ def abrir_chamada(chamado_id: str, request: Request) -> ChamadaOut:
         raise HTTPException(status_code=recusa.status, detail=recusa.detalhe) from None
 
     envio, stream = sessoes.urls_da_chamada(s)
+
+    # Avisa o totem **por onde** buscar o vídeo (MEL-006). É o WebSocket com
+    # escopo da COR-002 que entrega isso, então só o aparelho acompanhando este
+    # chamado recebe — e a `stream_url` está na allowlist `CAMPOS_TOTEM`
+    # justamente para poder passar.
+    await hub.broadcast(
+        "chamada_iniciada", {"chamado_id": chamado_id, "stream_url": stream}
+    )
+
     return ChamadaOut(
         sessao_id=s.sessao_id,
         envio_url=envio,
@@ -114,7 +124,7 @@ def abrir_chamada(chamado_id: str, request: Request) -> ChamadaOut:
 
 
 @router.delete("/chamados/{chamado_id}/chamada", status_code=204)
-def fechar_chamada(chamado_id: str, sessao: str | None = None) -> None:
+async def fechar_chamada(chamado_id: str, sessao: str | None = None) -> None:
     """Encerra a videochamada.
 
     Descarta também o quadro guardado: sem isso, a última imagem do operador
@@ -125,10 +135,15 @@ def fechar_chamada(chamado_id: str, sessao: str | None = None) -> None:
         repasse.encerrar(sessao)
         sessoes.fechar(sessao, "chamada encerrada pelo operador")
     else:
-        for s in sessoes.ativas():
-            if s.chamado_id == chamado_id and s.tipo == sessoes.TIPO_CHAMADA:
-                repasse.encerrar(s.sessao_id)
+        for s_ in sessoes.ativas():
+            if s_.chamado_id == chamado_id and s_.tipo == sessoes.TIPO_CHAMADA:
+                repasse.encerrar(s_.sessao_id)
         sessoes.fechar_do_chamado(chamado_id, "detalhe do chamado fechado")
+
+    # Sem este aviso o totem manteria o `<img>` montado contra um stream que
+    # não existe mais — e a última imagem do operador ficaria congelada na tela
+    # de quem está esperando, parecendo que alguém ainda está ali.
+    await hub.broadcast("chamada_encerrada", {"chamado_id": chamado_id})
 
 
 @router.get("/chamados/{chamado_id}/midia/auditoria")

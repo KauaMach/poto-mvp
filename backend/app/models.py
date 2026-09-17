@@ -310,7 +310,21 @@ def para_painel(chamado: dict) -> dict:
 # — e eles são sequenciais — receberia o relato daquela pessoa. O escopo limita
 # *quais* eventos chegam; esta lista limita *o que* cada evento carrega. As duas
 # coisas juntas é que fecham o caminho.
-CAMPOS_TOTEM = ("chamado_id", "status")
+# `stream_url` entra na lista por causa da MEL-006: é assim que o totem
+# descobre onde buscar o vídeo do operador quando a central inicia a chamada.
+# Ele não existe no `ChamadoOut`, então em `novo_chamado`/`atualizado` sai como
+# `None` — uniformidade tem preço, e é menor que o de abrir uma exceção na
+# allowlist para um evento específico.
+#
+# **Limitação honesta, e ela é real:** a URL carrega o token da sessão, e o
+# canal `/ws/chamado/{id}` é aberto (o totem não tem credencial — lacuna
+# conhecida da MVP-040). Então o vídeo do operador fica protegido apenas na
+# medida em que o protocolo do chamado é secreto, e eles são sequenciais. Numa
+# rede dedicada, como a da demonstração, é aceitável; numa rede compartilhada,
+# não. Quem for tratar isso tem que dar credencial ao totem primeiro — não
+# tentar esconder a URL, que é o que um `chamado_id` aleatório faria parecer
+# resolver sem resolver.
+CAMPOS_TOTEM = ("chamado_id", "status", "stream_url")
 
 
 def para_totem(dados: dict) -> dict:

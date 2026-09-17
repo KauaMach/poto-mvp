@@ -35,6 +35,10 @@ type Props = {
 
 export function AlertaAtivo({ alerta, desde, offline = false, onVoltar }: Props) {
   const [status, setStatus] = useState<StatusChamado>(alerta.status);
+  /* URL do vídeo do operador, quando a central inicia a chamada (MEL-006).
+   * Chega pelo WebSocket com escopo da COR-002, então só este chamado a
+   * recebe. */
+  const [videoDaCentral, setVideoDaCentral] = useState<string | null>(null);
   const [acionados, setAcionados] = useState<Record<string, boolean>>({});
   const tempo = useCronometro(desde);
 
@@ -42,8 +46,26 @@ export function AlertaAtivo({ alerta, desde, offline = false, onVoltar }: Props)
     (evento: EventoWS) => {
       /* Só interessa **este** chamado. Um outro totem acionando ao mesmo tempo
        * não pode mudar o status desta tela. */
-      if (evento.evento !== "atualizado" && evento.evento !== "novo_chamado") return;
+      /* Descarta os eventos sem `chamado_id` **antes** de comparar: são
+       * `conectado` e `ping`, e é essa ordem que permite ao TypeScript
+       * estreitar a união — invertê-la dá erro de tipo, porque `dados` daqueles
+       * dois não tem o campo. */
+      if (evento.evento === "conectado" || evento.evento === "ping") return;
       if (evento.dados.chamado_id !== alerta.chamado_id) return;
+
+      /* A central iniciou ou encerrou a videochamada (MEL-006). Encerrar
+       * **tem** que tirar o `<img>` da tela: mantê-lo montado contra um stream
+       * que acabou deixaria a última imagem do operador congelada, parecendo
+       * que alguém ainda está ali — o oposto de informar. */
+      if (evento.evento === "chamada_iniciada") {
+        setVideoDaCentral(evento.dados.stream_url);
+        return;
+      }
+      if (evento.evento === "chamada_encerrada") {
+        setVideoDaCentral(null);
+        return;
+      }
+
       setStatus(evento.dados.status);
     },
     [alerta.chamado_id],
@@ -100,6 +122,32 @@ export function AlertaAtivo({ alerta, desde, offline = false, onVoltar }: Props)
       <p className="poto-alerta-cronometro tabular" aria-label={`Tempo: ${tempo}`}>
         {tempo}
       </p>
+
+      {/* O operador, ao vivo (MEL-006).
+        *
+        * Entra **abaixo** do protocolo, do cronômetro e do status, e não acima:
+        * a função desta tela é informar quem está esperando, e o vídeo é
+        * acompanhamento. Empurrar o protocolo para fora da vista trocaria o
+        * essencial pelo acessório.
+        *
+        * MJPEG num `<img>`, sem uma linha de JavaScript de player — e sem
+        * exigir contexto seguro, porque **tocar** não exige, só capturar.
+        *
+        * `onError` limpa: se o stream cair, a moldura sai em vez de ficar um
+        * quadro quebrado na tela de alguém em pânico. */}
+      {videoDaCentral && (
+        <figure className="poto-alerta-video">
+          <img
+            src={videoDaCentral}
+            alt="Atendente da central, ao vivo"
+            onError={() => setVideoDaCentral(null)}
+          />
+          <figcaption>
+            <span aria-hidden="true" className="poto-ponto poto-ponto-vivo" />
+            Atendente na linha
+          </figcaption>
+        </figure>
+      )}
 
       <div className="poto-alerta-escalonar">
         <p className="poto-alerta-legenda">

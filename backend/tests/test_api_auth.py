@@ -343,7 +343,11 @@ def test_ws_do_totem_nao_entrega_relato(cliente):
         cliente.post(f"/api/v1/chamados/{cid}/ack", headers=CABECALHOS)
         evento = ws.receive_json()
 
-    assert set(evento["dados"]) == {"chamado_id", "status"}
+    # `stream_url` entrou na allowlist na MEL-006 (vem `None` aqui). O que este
+    # teste protege é o que **não** está na lista, e o relato é o campo que
+    # importa: ele sai para o painel de propósito e não pode sair para um
+    # aparelho de corredor.
+    assert set(evento["dados"]) == {"chamado_id", "status", "stream_url"}
     assert "me seguindo" not in json.dumps(evento, ensure_ascii=False)
 
 

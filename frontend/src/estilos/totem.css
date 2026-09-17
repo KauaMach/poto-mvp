@@ -310,3 +310,42 @@
   }
 }
 
+
+/* --- Vídeo da central na tela de alerta (MEL-006) -------------------------
+ *
+ * Abaixo do protocolo e do cronômetro, com largura limitada: a função da tela é
+ * informar quem espera, e o vídeo acompanha. Um vídeo em tela cheia empurraria
+ * o protocolo para fora da vista — trocaria o essencial pelo acessório.
+ */
+
+.poto-alerta-video {
+  margin: var(--space-lg) 0 0;
+  max-width: 320px;
+  width: 100%;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--ink);
+}
+
+.poto-alerta-video img {
+  display: block;
+  width: 100%;
+  /* 4/3 fixo, como a captura da central entrega (320×240). Sem isto a tela
+   * salta de altura quando o primeiro quadro chega — e saltar a tela de alguém
+   * em pânico é o pior momento possível para um relayout. */
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.poto-alerta-video figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--space-xs);
+  background: rgba(20, 15, 5, 0.85);
+  color: #fff;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+}

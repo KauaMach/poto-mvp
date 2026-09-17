@@ -27,7 +27,7 @@ poderia fazer mais ou melhor)
 | [COR-002](#cor-002--o-totem-recebe-o-relato-de-todos-os-chamados-pelo-websocket) | O totem recebe o relato de **todos** os chamados pelo WebSocket | Correção | **Alta** | ✅ **Implementado** (18/09) |
 | [MEL-004](#mel-004--backend-da-videochamada-sessão-recepção-de-quadros-e-relay) | Backend da videochamada: sessão, recepção de quadros e relay | Melhoria | Alta | ✅ **Implementado** (18/09) |
 | [MEL-005](#mel-005--painel-botão-iniciar-videochamada-e-captura-da-webcam) | Painel: botão "Iniciar videochamada" e captura da webcam | Melhoria | Alta | ✅ **Implementado** (18/09) |
-| [MEL-006](#mel-006--totem-o-operador-aparece-na-tela-de-alerta-ativo) | Totem: o operador aparece na tela de alerta ativo | Melhoria | Alta | Proposto |
+| [MEL-006](#mel-006--totem-o-operador-aparece-na-tela-de-alerta-ativo) | Totem: o operador aparece na tela de alerta ativo | Melhoria | Alta | ✅ **Implementado** (18/09) |
 | [MEL-007](#mel-007--áudio-da-central-para-o-totem) | Áudio da central para o totem | Melhoria | Média | Proposto |
 
 ---
@@ -651,6 +651,41 @@ painel já faz com a câmera da Pi. Tocar não exige contexto seguro; só captur
   acessória, o alerta é o principal.
 - **O tablet é um Galaxy Tab A11 de 8,7".** O custo de tocar MJPEG ali não foi medido (a
   MVP-079 mediu o custo na Pi, que é o outro lado).
+
+### Como ficou
+
+- **Dois eventos novos no hub**: `chamada_iniciada` (com a `stream_url`) e
+  `chamada_encerrada`. Chegam pelo canal com escopo da COR-002, então só o totem daquele
+  chamado recebe.
+- **`stream_url` entrou em `CAMPOS_TOTEM`.** Era necessário: o totem não tem credencial
+  (lacuna da MVP-040), não pode consultar `/chamados/{id}`, e adivinhar a URL é impossível
+  (`token_urlsafe`). Ampliar a allowlist foi a decisão certa em vez de abrir exceção para
+  um evento — o ponto dela é ser o único lugar que controla o que sai.
+- **`AlertaAtivo` mostra o vídeo abaixo** do protocolo, do cronômetro e do status, com
+  largura limitada a 320px. A função da tela é informar quem espera; o vídeo acompanha.
+  Empurrar o protocolo para fora da vista trocaria o essencial pelo acessório.
+- **`aspect-ratio: 4/3` fixo** — sem isso a tela salta de altura quando o primeiro quadro
+  chega, e saltar a tela de alguém em pânico é o pior momento possível para um relayout.
+- **`chamada_encerrada` tira o `<img>`**, e o `onError` também. Um stream morto com o
+  elemento montado deixaria a última imagem do operador congelada, parecendo que alguém
+  ainda está ali — o oposto de informar.
+
+### A limitação de segurança, dita abertamente
+
+A `stream_url` carrega o token da sessão, e o canal `/ws/chamado/{id}` é **aberto** — o
+totem não tem credencial. Então **o vídeo do operador fica protegido apenas na medida em
+que o protocolo do chamado é secreto, e eles são sequenciais** (`CALL-2026-000037`).
+
+Numa rede dedicada, como a da demonstração, é aceitável. Numa rede compartilhada, não.
+Quem for tratar isso tem que **dar credencial ao totem primeiro** — não tentar esconder a
+URL, que é o que um `chamado_id` aleatório faria parecer resolver sem resolver.
+
+### Um erro de ordenação que o compilador pegou
+
+Movi a checagem de `chamado_id` para antes da discriminação do evento no `aoEvento`, e o
+`tsc -b` do build recusou: `conectado` e `ping` não têm esse campo, então o TypeScript não
+conseguia estreitar a união. A ordem certa é descartar esses dois primeiro. O `oxlint` e o
+`tsc --noEmit` isolado passaram — foi o build que pegou.
 
 ---
 
