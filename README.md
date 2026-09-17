@@ -60,6 +60,7 @@ A primeira explica a fila offline e o roteamento determinístico. A segunda expl
 | [`docs/conexao-ssh.md`](docs/conexao-ssh.md) | Como conectar na Raspberry Pi por SSH |
 | [`docs/roteiro-teste.md`](docs/roteiro-teste.md) | **Subir o backend e as duas interfaces**, rotas e roteiro de teste |
 | [`docs/correcoes-e-melhorias.md`](docs/correcoes-e-melhorias.md) | Backlog pós-MVP: correções e melhorias propostas |
+| [`docs/visao-roadmap.md`](docs/visao-roadmap.md) | Visão de produto: as fases além do totem, e o que cada uma exige revisitar |
 | [`docs/aceite-mvp.md`](docs/aceite-mvp.md) | Roteiro de resiliência, com os números medidos |
 | [`docs/setup-tablet.md`](docs/setup-tablet.md) | Travar o tablet no modo kiosk |
 
