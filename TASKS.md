@@ -2667,6 +2667,25 @@
 > resolve o atendimento, muda o estado e fecha a aba. Sem o acoplamento, a sessão só cairia
 > dez minutos depois — e a auditoria mostraria, com razão, a câmera aberta todo esse tempo.
 >
+> **Há um QUARTO caminho, acrescentado em 17/09 depois de um buraco encontrado na
+> auditoria da Pi.** Duas linhas de `abertura` de 16/09 estavam sem par, mostrando câmeras
+> "abertas" havia 24 horas. Nenhuma ficou ligada: o serviço foi reiniciado com uma sessão
+> aberta, e como as sessões vivem em memória (de propósito, ver abaixo), o reinício as
+> descartava **sem escrever o fechamento**. O `limpar_expiradas` não alcançava essas — ele
+> varre o dicionário em memória, que o reinício já esvaziou.
+>
+> Para quem audita, abertura sem fechamento lê exatamente como o que esta task existe para
+> impedir. É pior que não ter auditoria: acusa algo que não aconteceu.
+>
+> `fechar_todas()` roda no `lifespan`, antes de cancelar o worker de SLA. É o único dos
+> quatro caminhos que não parte de uma ação de quem usa. Verificado na Pi: sessão aberta às
+> 16:46:17, `systemctl stop`, e a linha de fechamento com motivo **`serviço encerrado`** às
+> 16:46:18.
+>
+> As duas linhas órfãs anteriores **ficam como estão**. A tabela é append-only e não se sabe
+> a hora em que aquelas sessões de fato caíram; inventar um fechamento seria falsificar
+> justamente o registro que dá sentido à auditoria.
+>
 > **A sessão da câmera não autoriza o microfone.** Áudio é mais invasivo que imagem, e sem
 > essa checagem um único pedido de vídeo daria acesso ao som do local.
 >
