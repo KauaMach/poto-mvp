@@ -24,6 +24,11 @@ poderia fazer mais ou melhor)
 | [MEL-001](#mel-001--videochamada-da-central-para-o-totem-durante-o-pânico) | Videochamada da central para o totem, durante o pânico | Melhoria | Alta (pós-MVP) | Proposto |
 | [MEL-002](#mel-002--https-só-necessário-para-o-caminho-b-da-mel-001) | HTTPS: só necessário para o Caminho B da MEL-001 | Melhoria | Baixa | Proposto |
 | [MEL-003](#mel-003--rota-explícita-totem-em-vez-de-a-raiz-ser-o-totem-por-padrão) | Rota explícita `/totem`, em vez de a raiz ser o totem por padrão | Melhoria | Média | ✅ **Implementado** (18/09) |
+| [COR-002](#cor-002--o-totem-recebe-o-relato-de-todos-os-chamados-pelo-websocket) | O totem recebe o relato de **todos** os chamados pelo WebSocket | Correção | **Alta** | Proposto |
+| [MEL-004](#mel-004--backend-da-videochamada-sessão-recepção-de-quadros-e-relay) | Backend da videochamada: sessão, recepção de quadros e relay | Melhoria | Alta | Proposto |
+| [MEL-005](#mel-005--painel-botão-iniciar-videochamada-e-captura-da-webcam) | Painel: botão "Iniciar videochamada" e captura da webcam | Melhoria | Alta | Proposto |
+| [MEL-006](#mel-006--totem-o-operador-aparece-na-tela-de-alerta-ativo) | Totem: o operador aparece na tela de alerta ativo | Melhoria | Alta | Proposto |
+| [MEL-007](#mel-007--áudio-da-central-para-o-totem) | Áudio da central para o totem | Melhoria | Média | Proposto |
 
 ---
 
@@ -148,7 +153,14 @@ outro caminho, com a diferença de que agora depende de alguém lembrar de repas
 
 ## MEL-001 — Videochamada da central para o totem, durante o pânico
 
-**Tipo:** Melhoria · **Prioridade sugerida:** Alta (pós-MVP) · **Levantado por:** Kaua, 18/09
+**Tipo:** Melhoria (guarda-chuva) · **Prioridade sugerida:** Alta · **Levantado por:** Kaua, 18/09
+
+> **Esta entrada descreve o recurso inteiro e o raciocínio.** A implementação está quebrada
+> em tasks executáveis: [COR-002](#cor-002--o-totem-recebe-o-relato-de-todos-os-chamados-pelo-websocket)
+> (pré-requisito), [MEL-004](#mel-004--backend-da-videochamada-sessão-recepção-de-quadros-e-relay),
+> [MEL-005](#mel-005--painel-botão-iniciar-videochamada-e-captura-da-webcam),
+> [MEL-006](#mel-006--totem-o-operador-aparece-na-tela-de-alerta-ativo) e
+> [MEL-007](#mel-007--áudio-da-central-para-o-totem).
 
 > **Esta entrada foi reescrita em 18/09.** A primeira versão concluía que o recurso estava
 > *bloqueado* por HTTPS. **Estava errada** — a conclusão vinha de eu ter assumido que a
@@ -390,6 +402,179 @@ Verificado por mutação: apagar a checagem explícita quebra 1 verificação; d
 - `/galeria` continua existindo só em desenvolvimento, do mesmo jeito.
 - Nenhuma mudança de backend: `app/main.py` já serve o mesmo `index.html` pra qualquer
   caminho fora de `/api`, e essa parte está certa como está.
+
+---
+
+## COR-002 — O totem recebe o relato de todos os chamados pelo WebSocket
+
+**Tipo:** Correção · **Prioridade sugerida:** **Alta** · **Levantado por:** encontrado ao
+desenhar a MEL-004, em 18/09
+
+### O problema
+
+A tela de alerta ativo do totem abre um WebSocket no **mesmo** `/ws` que o painel da
+central usa (`frontend/src/totem/telas/AlertaAtivo.tsx`), e o hub **não filtra por
+cliente**:
+
+```python
+# backend/app/hub.py
+async def broadcast(self, evento: str, dados: dict) -> None:
+    """Envia `{evento, dados}` a todos os painéis conectados."""
+```
+
+O payload é `para_painel(chamado)`, que é o `ChamadoOut` — e o `ChamadoOut` **inclui
+`texto_livre`**, o relato de quem pediu ajuda. É deliberado que ele saia ali: quem atende
+precisa do relato, e o painel está dentro da fronteira de confiança.
+
+**O totem não está.** Um aparelho num corredor público recebe, em tempo real, o relato de
+todas as outras pessoas que acionaram o totem. A única coisa que impede de aparecer na
+tela é um filtro **no cliente**:
+
+```tsx
+// AlertaAtivo.tsx — aoEvento()
+if (evento.dados.chamado_id !== alerta.chamado_id) return;
+```
+
+O dado já chegou ao aparelho. Está visível no DevTools, no tráfego da rede (é `ws://`, sem
+TLS) e para qualquer coisa que leia a conexão.
+
+**É exatamente o padrão que o projeto rejeita em outros lugares.** O `resumo()` de
+`canais/base.py` é uma lista de campos permitidos justamente para o relato não vazar por
+esquecimento, e o comentário do modo discreto diz que "não pode depender de o frontend
+lembrar de aplicá-lo". Aqui a proteção **é** o frontend lembrando.
+
+### Por que é pré-requisito da videochamada
+
+A MEL-004 precisa que o totem descubra a URL do stream da chamada. O caminho natural é o
+WebSocket que ele já tem aberto — mas construir mais um dado sensível sobre um canal que
+entrega tudo a todos pioraria o problema em vez de contorná-lo.
+
+### Caminhos
+
+- **A — canal por chamado.** Uma rota nova, `WS /ws/chamado/{chamado_id}`, que só entrega
+  eventos daquele chamado. O totem assina a dele; o painel continua em `/ws`. O hub ganha
+  um conceito de escopo por cliente. **Recomendado**: é a correção de verdade — o servidor
+  passa a decidir o que cada cliente pode receber.
+- **B — evento enxuto para o totem.** O hub passa a emitir dois formatos: o completo para
+  o painel e um reduzido (só `chamado_id` e `status`) para quem não é painel. Exige
+  distinguir os clientes, o que já é metade do caminho A.
+- **C — o totem para de usar WebSocket** e passa a consultar `GET /chamados/{id}`. Perde o
+  tempo real (< 1 s é requisito da tela de alerta) e esse endpoint exige o token do painel,
+  que o totem não tem.
+
+### O que o totem de fato precisa
+
+Só o **status do próprio chamado** — é o que a tela de alerta mostra ("Aguardando central",
+"Central recebeu", "Atendimento a caminho"). Não precisa de relato, nem de canal, nem de
+gravidade, nem de nada de outros chamados. O caminho A entrega exatamente isso.
+
+---
+
+## MEL-004 — Backend da videochamada: sessão, recepção de quadros e relay
+
+**Tipo:** Melhoria · **Prioridade sugerida:** Alta · **Depende de:** COR-002
+
+### O que fazer
+
+Inverter o fluxo de mídia que já existe, reaproveitando **inteira** a máquina de sessão da
+MVP-077:
+
+| endpoint | quem chama | o que faz |
+|---|---|---|
+| `POST /chamados/{id}/chamada` | painel (com token) | abre a sessão; devolve `envio_url` e `stream_url` |
+| `POST /midia/chamada/{sessao}/quadro` | central | envia **um** JPEG |
+| `GET /midia/chamada/{sessao}/stream` | totem | consome MJPEG |
+| `DELETE /chamados/{id}/chamada` | painel | encerra |
+
+O reaproveitamento é o ponto: `_sessoes`, `_encerrar`, `limpar_expiradas`, `fechar_todas`,
+`fechar_do_chamado` e a auditoria da MVP-077 passam a valer para a chamada **sem mudança**,
+porque a sessão da chamada entra no mesmo dicionário. Expira nos mesmos 10 minutos, é
+auditada com o mesmo par abertura/fechamento, e é encerrada junto quando o chamado fecha.
+
+A diferença: `abrir()` exige um dispositivo real (`obter(dispositivo_id)`), e a chamada não
+tem — a origem é a central. Precisa de um `abrir_chamada()` que pule a checagem de
+dispositivo e use um identificador fixo, mantendo tudo o mais.
+
+### Decisões a tomar no caminho
+
+- **Quantos quadros guardar?** Um só, o mais recente, como o `_Captura` da câmera faz.
+  Guardar fila introduziria atraso crescente — numa chamada, quadro velho não vale nada.
+- **Qual o teto de taxa e de tamanho?** O endpoint recebe de fora; sem limite, um cliente
+  mal-comportado enche a memória. Um teto de tamanho por quadro e um descarte do anterior
+  resolvem.
+- **O stream expira com a sessão**, checado a cada quadro — como o vídeo da Pi já faz.
+
+---
+
+## MEL-005 — Painel: botão "Iniciar videochamada" e captura da webcam
+
+**Tipo:** Melhoria · **Prioridade sugerida:** Alta · **Depende de:** MEL-004
+
+### O que fazer
+
+No cartão de um chamado **de pânico ativo**, um botão "Iniciar videochamada". Ao clicar:
+abre a sessão (MEL-004), começa a capturar a webcam do operador e envia quadros.
+
+### A captura, e os três caminhos
+
+Esta é a única parte do recurso com atrito técnico, porque `getUserMedia` exige contexto
+seguro e o sistema serve em HTTP puro:
+
+| caminho | o que exige | onde |
+|---|---|---|
+| **C — flag do navegador** | `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, com a origem da Pi | **uma** máquina, a da central |
+| **A — agente local** | um programa pequeno na máquina da central | uma máquina, sem tocar no navegador |
+| **B — HTTPS** | certificado em **todos** os aparelhos ([MEL-002](#mel-002--https-só-necessário-para-o-caminho-b-da-mel-001)) | todos |
+
+**Recomendado: C para começar.** É uma configuração, numa máquina controlada, reversível —
+e permite escrever o código do jeito certo (`getUserMedia` + `<canvas>` + `POST`), que
+depois funciona sem flag nenhuma no dia em que houver HTTPS. O caminho A vira alternativa
+se a flag não for aceitável na máquina da central.
+
+**Consequência honesta para a implementação:** `getUserMedia` e a webcam **não podem ser
+verificados sem navegador e sem câmera**. O que dá para verificar é a lógica ao redor
+(montagem da URL, ciclo de captura, encerramento) e o backend inteiro. A prova real é
+abrir na máquina da central.
+
+---
+
+## MEL-006 — Totem: o operador aparece na tela de alerta ativo
+
+**Tipo:** Melhoria · **Prioridade sugerida:** Alta · **Depende de:** MEL-004, COR-002
+
+### O que fazer
+
+Na tela de alerta ativo — que já existe, já fica aberta durante todo o pânico e já tem
+WebSocket — mostrar o vídeo do operador quando a chamada começar.
+
+**Do lado do totem não há bloqueio nenhum:** é um `<img>` consumindo MJPEG, igual ao que o
+painel já faz com a câmera da Pi. Tocar não exige contexto seguro; só capturar exige.
+
+### Detalhes que importam
+
+- **A URL do stream chega pelo WebSocket**, num evento novo (`chamada_iniciada`) — por
+  isso a COR-002 vem antes: o canal precisa ser por chamado.
+- **Não pode competir com o pânico.** A tela de alerta tem uma função: informar quem está
+  esperando. O vídeo entra como acompanhamento, sem empurrar o protocolo, o cronômetro ou o
+  status para fora da vista.
+- **Quando a chamada termina**, o vídeo sai e a tela continua funcionando — a chamada é
+  acessória, o alerta é o principal.
+- **O tablet é um Galaxy Tab A11 de 8,7".** O custo de tocar MJPEG ali não foi medido (a
+  MVP-079 mediu o custo na Pi, que é o outro lado).
+
+---
+
+## MEL-007 — Áudio da central para o totem
+
+**Tipo:** Melhoria · **Prioridade sugerida:** Média · **Depende de:** MEL-004, MEL-005
+
+Rosto sem voz é comunicação pela metade. O áudio do operador segue o mesmo caminho do
+vídeo: captura na central, envio para a Pi, `<audio>` no totem. O áudio **da pessoa** já
+chega à central hoje (MVP-076).
+
+Fica separado do vídeo de propósito: o vídeo entrega o essencial do pedido ("ver alguém"),
+e áudio ao vivo em HTTP por quadros tem problemas próprios — sincronia, continuidade,
+buffer — que não devem atrasar o vídeo.
 
 ---
 
