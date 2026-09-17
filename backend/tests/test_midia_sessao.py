@@ -63,6 +63,16 @@ def ambiente(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def banco_e_dispositivos(ambiente):
+    """Só um nome para depender explicitamente do ambiente falso.
+
+    A `ambiente` é `autouse`, mas o teste do ciclo de vida cria o seu próprio
+    `TestClient` e fica mais legível declarando de que ele depende.
+    """
+    return ambiente
+
+
+@pytest.fixture
 def cliente():
     with TestClient(criar_app()) as c:
         yield c
@@ -926,3 +936,75 @@ def test_url_do_stream_de_microfone_aponta_para_o_recurso_certo(cliente):
 
     assert url.startswith("/api/v1/midia/microfone/alsa:2,0/stream?sessao=")
     assert "camera" not in url
+
+
+# ===========================================================================
+# Encerramento da aplicação — o quarto caminho de fechamento
+# ===========================================================================
+#
+# Encontrado analisando a auditoria da Pi depois de um dia de uso: duas linhas
+# de `abertura` sem par, mostrando câmeras "abertas" havia 24 horas. A causa é
+# a escolha (correta) de manter as sessões em memória — um `systemctl restart`
+# as descarta, e o `limpar_expiradas` não as alcança, porque ele varre o
+# dicionário que o reinício já esvaziou.
+#
+# Para quem audita, uma abertura sem fechamento lê exatamente como o que a
+# MVP-077 existe para impedir. É pior que não ter auditoria: acusa algo que não
+# aconteceu.
+
+
+def test_fechar_todas_audita_sessao_nao_expirada(cliente):
+    """O caso que faltava: a sessão está **válida** e o serviço vai cair.
+
+    `limpar_expiradas` não serve aqui de propósito — ela só toca no que venceu.
+    """
+    cid = criar_chamado(cliente)
+    s = sessoes.abrir(cid, "csi:0")
+    assert not s.expirada
+
+    assert sessoes.limpar_expiradas() == 0, "não expirou; não é caso da varredura"
+    assert sessoes.fechar_todas() == 1
+
+    linhas = db.listar_auditoria_midia(cid)
+    assert [linha["acao"] for linha in linhas] == ["abertura", "fechamento"]
+    assert linhas[1]["motivo"] == "serviço encerrado"
+    assert linhas[1]["duracao_seg"] is not None
+
+
+def test_fechar_todas_cobre_camera_e_microfone(cliente):
+    """Um encerramento com vídeo e áudio abertos tem que fechar os dois."""
+    cid = criar_chamado(cliente)
+    sessoes.abrir(cid, "csi:0")
+    sessoes.abrir(cid, "alsa:2,0")
+
+    assert sessoes.fechar_todas() == 2
+
+    linhas = db.listar_auditoria_midia(cid)
+    fechamentos = [linha for linha in linhas if linha["acao"] == "fechamento"]
+    assert {linha["dispositivo_id"] for linha in fechamentos} == {"csi:0", "alsa:2,0"}
+
+
+def test_fechar_todas_sem_sessao_nao_faz_nada(cliente):
+    """O caso comum — encerrar o serviço sem ninguém olhando câmera."""
+    assert sessoes.fechar_todas() == 0
+
+
+def test_encerrar_a_aplicacao_fecha_as_sessoes(banco_e_dispositivos):
+    """**A verificação que importa: pelo ciclo de vida real da aplicação.**
+
+    Testar só `fechar_todas()` provaria que a função funciona, não que ela é
+    chamada. O bug era justamente a ausência da chamada — a função nem existia,
+    e nada no `lifespan` fechava sessão alguma.
+
+    Sai do `with` do `TestClient`, que dispara o shutdown do ASGI.
+    """
+    with TestClient(criar_app()) as c:
+        cid = criar_chamado(c)
+        sessoes.abrir(cid, "csi:0")
+        assert len(sessoes.ativas()) == 1
+    # Aqui o lifespan já encerrou.
+    assert sessoes.ativas() == []
+
+    linhas = db.listar_auditoria_midia(cid)
+    assert [linha["acao"] for linha in linhas] == ["abertura", "fechamento"]
+    assert linhas[1]["motivo"] == "serviço encerrado"

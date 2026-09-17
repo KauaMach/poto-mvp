@@ -235,6 +235,34 @@ def limpar_expiradas() -> int:
     return len(vencidas)
 
 
+def fechar_todas(motivo: str = "serviço encerrado") -> int:
+    """Audita e remove **todas** as sessões, expiradas ou não. Quantas fechou.
+
+    Chamada no encerramento da aplicação, e existe por causa de um buraco
+    encontrado ao analisar a auditoria da Pi depois de um dia de uso.
+
+    As sessões vivem em memória de propósito (ver a nota no topo). A
+    consequência que eu não havia coberto: um `systemctl restart` com sessão
+    aberta **descarta a sessão sem escrever a linha de fechamento**. O
+    `limpar_expiradas` não alcança essas, porque ele varre o dicionário em
+    memória — que o reinício já esvaziou.
+
+    O resultado medido na Pi: duas linhas de `abertura` de 16/09 sem par,
+    mostrando câmeras "abertas" havia **24 horas**. Para quem audita, isso lê
+    exatamente como o que a MVP-077 existe para impedir — e é pior que não ter
+    auditoria, porque acusa algo que não aconteceu.
+
+    A MVP-077 listava três caminhos de fechamento: pelo operador, por expiração
+    e pelo encerramento do chamado. Este é o quarto, e o único que não parte de
+    uma ação de quem usa.
+    """
+    with _trava:
+        todas = list(_sessoes.values())
+    for sessao in todas:
+        _encerrar(sessao, "fechamento", motivo)
+    return len(todas)
+
+
 def ativas() -> list[Sessao]:
     with _trava:
         return [s for s in _sessoes.values() if not s.expirada]

@@ -13,6 +13,7 @@ CORS nem endpoint para configurar no cliente.
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
@@ -25,8 +26,11 @@ from starlette.websockets import WebSocketClose
 
 from . import config, db, sla
 from .api import chamados, eventos, midia, sistema
+from .midia import sessao as sessoes_midia
 
 API = "/api/v1"
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -46,6 +50,16 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        # Fecha as sessões de mídia **antes** de derrubar o worker, para que
+        # cada uma deixe sua linha de fechamento na auditoria.
+        #
+        # Sem isto, um `systemctl restart` com a câmera aberta descarta a
+        # sessão (elas vivem em memória, de propósito) e a auditoria fica com
+        # uma `abertura` sem par — lendo, para quem fiscaliza, como uma câmera
+        # que ficou ligada indefinidamente. Encontrado na Pi: duas linhas assim,
+        # com 24 horas de "câmera aberta" que nunca existiram.
+        if fechadas := sessoes_midia.fechar_todas():
+            logger.info("mídia: %d sessão(ões) fechada(s) no encerramento", fechadas)
         worker.cancel()
         # `suppress` porque o cancelamento é o caminho normal de saída: o laço
         # relança `CancelledError` de propósito, para que o cancel de fato
