@@ -21,8 +21,8 @@ poderia fazer mais ou melhor)
 | ID | Item | Tipo | Prioridade sugerida | Status |
 |---|---|---|---|---|
 | [COR-001](#cor-001--pânico-não-deveria-acionar-a-sala-lilás-automaticamente) | Pânico não deveria acionar a Sala Lilás automaticamente | Correção | Alta | ✅ **Implementado** (18/09) |
-| [MEL-001](#mel-001--canal-de-vídeo-bidirecional-da-central-para-o-totem) | Canal de vídeo bidirecional da central para o totem | Melhoria | A discutir | Proposto |
-| [MEL-002](#mel-002--pré-requisito-de-mel-001-servir-a-aplicação-por-https) | Pré-requisito de MEL-001: servir a aplicação por HTTPS | Melhoria | A discutir | Proposto |
+| [MEL-001](#mel-001--videochamada-da-central-para-o-totem-durante-o-pânico) | Videochamada da central para o totem, durante o pânico | Melhoria | Alta (pós-MVP) | Proposto |
+| [MEL-002](#mel-002--https-só-necessário-para-o-caminho-b-da-mel-001) | HTTPS: só necessário para o Caminho B da MEL-001 | Melhoria | Baixa | Proposto |
 | [MEL-003](#mel-003--rota-explícita-totem-em-vez-de-a-raiz-ser-o-totem-por-padrão) | Rota explícita `/totem`, em vez de a raiz ser o totem por padrão | Melhoria | Média | ✅ **Implementado** (18/09) |
 
 ---
@@ -146,98 +146,116 @@ outro caminho, com a diferença de que agora depende de alguém lembrar de repas
 
 ---
 
-## MEL-001 — Canal de vídeo bidirecional da central para o totem
+## MEL-001 — Videochamada da central para o totem, durante o pânico
 
-**Tipo:** Melhoria · **Prioridade sugerida:** a discutir · **Levantado por:** Kaua, 18/09
+**Tipo:** Melhoria · **Prioridade sugerida:** Alta (pós-MVP) · **Levantado por:** Kaua, 18/09
 
-### A ideia
+> **Esta entrada foi reescrita em 18/09.** A primeira versão concluía que o recurso estava
+> *bloqueado* por HTTPS. **Estava errada** — a conclusão vinha de eu ter assumido que a
+> câmera do operador só poderia ser capturada pelo navegador dele. Não é o caso. A análise
+> corrigida está abaixo; o erro fica registrado porque foi ele que quase enterrou uma ideia
+> viável.
 
-Quando a central abre a câmera de um chamado ativo (MVP-078), ela só **recebe**
-vídeo — vê o corredor pela câmera da Pi. A pergunta é se dá para inverter também: a
-central **mostrar sua própria câmera na tela do totem**, para estabelecer um canal de
-comunicação direto — o operador aparecendo ao vivo para quem está pedindo ajuda,
-como uma chamada de vídeo.
+### O fluxo que se quer
 
-### Resposta curta
+1. A pessoa aperta o **pânico** no totem.
+2. A central recebe o alerta (já acontece hoje, por WebSocket, em ~200 ms).
+3. O operador decide e clica em **"Iniciar videochamada"**.
+4. **O rosto do operador aparece na tela do totem** — a pessoa vê e ouve alguém.
 
-Tecnicamente plausível e desejável, mas **é um recurso novo, não um ajuste** — do
-tamanho de várias tasks da Fase 8b somadas — e **está bloqueado por uma decisão de
-arquitetura que precisa ser tomada antes** (ver MEL-002). Não é "só ligar o
-microfone ao contrário".
+O objetivo não é vigilância nem diagnóstico: é **a pessoa não se sentir sozinha** enquanto
+o socorro não chega. Isso importa para o desenho, porque muda o que é "bom o suficiente":
+não precisa ser 30 fps em HD; precisa ter um rosto humano e uma voz.
 
-### Por que não é simples
+### O que já existe, e é metade do caminho
 
-**1. Hoje o caminho é de mão única, por desenho.** A câmera e o microfone que a
-central vê são capturados **no servidor** (`picamera2`/V4L2 e ALSA, na própria Pi) —
-não no navegador de ninguém. É por isso que funciona sem WebRTC: o Python já tem o
-hardware em mãos e serve MJPEG puro (`ARCHITECTURE.md`, `PLAN.md §6`). A câmera do
-**operador** está no PC dele, não na Pi — o servidor não tem acesso a ela. Capturá-la
-exige o **navegador** do operador, com `getUserMedia`.
+O sistema **já faz o sentido inverso**. Desde a MVP-073/078, o operador vê e ouve a pessoa,
+pela câmera e microfone da Pi, sob sessão auditada.
 
-**2. `getUserMedia` exige contexto seguro, e o sistema roda em HTTP puro.** Por
-decisão deliberada do projeto (evitar TLS/certificados numa demonstração em rede
-local — `PLAN.md §8`), a aplicação inteira serve em `http://`, nunca `https://`. Os
-navegadores só liberam `getUserMedia` em **contexto seguro**: HTTPS, ou
-`localhost`/`127.0.0.1`. A tela da central roda em `http://<ip-da-pi>:8000/painel`,
-que não é nem uma coisa nem outra — **o navegador recusaria o pedido de câmera do
-operador antes mesmo de qualquer código deste projeto rodar.** Ver [MEL-002](#mel-002--pré-requisito-de-mel-001-servir-a-aplicação-por-https).
+```
+HOJE:      Pi (câmera/mic) ──MJPEG/WAV──> central      ✅ funciona e está medido
+FALTANDO:  central (webcam) ─────────────> totem
+```
 
-**3. WebRTC foi explicitamente deixado de fora do escopo do MVP.** O `PLAN.md` lista
-"WebRTC P2P" entre o que foi cortado por complexidade, e o `TASKS.md` classifica
-"Mídia avançada (WebRTC P2P, gravação, monitoramento oculto)" como **P2 — fora do
-MVP**. Um canal bidirecional de vídeo de verdade normalmente se constrói com WebRTC
-(sinalização + ICE/STUN, opcionalmente TURN). Reabrir esse escopo é uma decisão de
-projeto, não um detalhe de implementação.
+E o desenho pedido **espelha exatamente** o que já está construído:
 
-### Dois caminhos possíveis, se for adiante
+| hoje (MVP-077/078) | a videochamada |
+|---|---|
+| operador clica "Ver câmera" | operador clica "Iniciar videochamada" |
+| `POST /chamados/{id}/midia` → sessão | `POST /chamados/{id}/chamada` → sessão |
+| Pi → central | central → totem |
+| sessão expira em 10 min, auditada | **a mesma** máquina de sessão e auditoria |
 
-**Caminho A — Retransmissão de quadros, no mesmo estilo do que já existe.**
-Consistente com a filosofia atual (MJPEG sobre HTTP simples, sem sinalização):
+Ou seja: a MVP-077 (sessão + auditoria + expiração) é reaproveitada **inteira**, invertendo
+só a direção do fluxo. E a tela onde o vídeo apareceria — o **alerta ativo** — já existe,
+já fica aberta durante todo o pânico e já tem WebSocket ligado.
 
-- o navegador da central captura a própria câmera com `getUserMedia` e desenha
-  quadros num `<canvas>` a alguns fps;
-- envia cada quadro por `POST` (ex.: `POST /midia/central/{chamado_id}/quadro`);
-- o backend guarda o quadro mais recente em memória (o mesmo padrão de `_Captura`
-  de `camera.py`) e serve como MJPEG num novo
-  `GET /midia/central/{chamado_id}/stream`;
-- o totem consome isso num `<img>`, do mesmo jeito que a central hoje consome a
-  câmera da Pi.
+### A assimetria que destrava tudo, e que eu havia perdido
 
-Prós: nenhuma biblioteca nova, mesma arquitetura, mesmo modelo mental. Contras: não
-é uma chamada de vídeo de verdade — é uma sequência de fotos a poucos fps, com
-atraso maior que vídeo ao vivo. Ainda **exige resolver o bloqueio de contexto
-seguro** (item 2 acima), porque `getUserMedia` roda no navegador do operador de
-qualquer forma.
+| | precisa de contexto seguro (HTTPS)? |
+|---|---|
+| **Capturar** câmera/mic no navegador (`getUserMedia`) | **Sim** |
+| **Tocar** vídeo/áudio (`<img>`, `<audio>`, `<video>`) | **Não** — funciona em HTTP puro |
 
-**Caminho B — WebRTC de verdade.** Vídeo e áudio full-duplex, latência baixa,
-experiência de chamada de verdade. Precisa de um canal de sinalização (o hub de
-WebSocket que já existe poderia carregar SDP/ICE) e, dependendo da rede,
-possivelmente um servidor TURN. É o esforço maior dos dois, mas é o que de fato
-entrega "chamada de vídeo". Também depende de resolver o contexto seguro — a
-exigência do navegador é a mesma para `getUserMedia` em WebRTC.
+**O totem só precisa tocar.** Ele não captura nada — a Pi já captura a pessoa. Então
+**o lado do totem não tem bloqueio nenhum**: é o mesmo `<img>` de MJPEG que a central já
+usa hoje, na direção inversa.
 
-**Nos dois caminhos, o pré-requisito é o mesmo: [MEL-002](#mel-002--pré-requisito-de-mel-001-servir-a-aplicação-por-https).**
+O bloqueio existe **só** para capturar a câmera do operador. E aí está o erro da primeira
+versão desta entrada: eu assumi que isso teria que ser no navegador dele.
 
-### Considerações que vão além da engenharia
+### Dois caminhos para a captura na central
 
-- **Áudio.** Um vídeo sem áudio da central conversando é comunicação pela metade.
-  Precisa de um canal de áudio simétrico (o totem já tem microfone? hoje não — só a
-  Pi captura áudio, para a central ouvir).
-- **Privacidade do operador.** Diferente de captar a Pi (equipamento institucional
-  fixo, já sob aviso de auditoria), aqui é a câmera **pessoal** do operador. Vale
-  decidir se isso é opt-in por chamado, e como fica registrado na auditoria de mídia
-  (a MVP-077 audita "quem olhou a câmera de quem" — aqui seria "quem apareceu na tela
-  de quem", e o rastro tem que ser igualmente honesto).
-- **O totem é o Galaxy Tab A11 do corredor.** Mostrar vídeo ao vivo ali significa
-  competir por CPU e banda com o que o totem já faz (acionar chamados, mostrar
-  status). Vale medir antes de assumir que cabe.
+**Caminho A — agente local na máquina da central. Não precisa de HTTPS.**
+
+Um programa pequeno rodando na mesa da central (como o `picamera2` roda na Pi) captura a
+webcam do operador e envia os quadros por HTTP para a Pi, que retransmite em MJPEG. Não
+usa `getUserMedia`, não usa WebRTC, não precisa de certificado.
+
+É **a mesma filosofia que o projeto já adotou**: captura fora do navegador, transporte em
+MJPEG simples (`PLAN.md §4`, decisão de mídia). O custo é instalar algo na máquina da
+central — um computador institucional e controlado, o que é bem menos invasivo que
+provisionar certificado em cada tablet.
+
+**Caminho B — `getUserMedia` no navegador do operador.** Nada para instalar na central, e
+abre a porta para WebRTC de verdade (full-duplex, latência baixa) depois. **Este** é o que
+exige [MEL-002](#mel-002--https-só-necessário-para-o-caminho-b-da-mel-001).
+
+Recomendação: **Caminho A**, por não exigir HTTPS nem tocar em nada que já funciona (o
+kiosk em tela cheia do tablet, por exemplo, é sensível a certificado autoassinado).
+
+### Decisões de produto que precedem o código
+
+- **Um sentido ou dois?** A pessoa precisa **ser vista** pelo operador nessa chamada, ou
+  basta ela **ver e ouvir** o operador? Se um sentido bastar, o trabalho cai bastante — e o
+  outro sentido **já existe** (a central já vê e ouve a pessoa pela Pi). Para "me sentir
+  mais segura", suspeito que ver alguém do outro lado já resolva.
+- **Áudio.** Rosto sem voz é comunicação pela metade. O áudio do operador segue o mesmo
+  caminho do vídeo; o áudio da pessoa **já chega** à central hoje.
+- **Privacidade do operador.** Diferente da câmera da Pi (equipamento institucional fixo,
+  sob aviso), aqui é a câmera **pessoal** de quem atende. A auditoria da MVP-077 registra
+  "quem olhou a câmera de quem" — aqui seria "quem apareceu na tela de quem", e o rastro
+  tem que ser igualmente honesto. Vale ser opt-in por chamado.
+- **O totem é um Galaxy Tab A11 de 8,7".** Tocar vídeo ao vivo ali compete com o que ele já
+  faz. A MVP-079 mediu o custo do outro sentido (2,5% de CPU na Pi); o custo **no tablet**
+  não foi medido.
+
+### Por que fica para depois do MVP
+
+Não por bloqueio — isso foi retirado. Por **tamanho**: agente novo na central, endpoints
+novos, player novo na tela de alerta, áudio, e a trilha de auditoria do lado do operador.
+É o volume de várias tasks da Fase 8b somadas, e o MVP fecha antes disso.
 
 ---
 
-## MEL-002 — Pré-requisito de MEL-001: servir a aplicação por HTTPS
+## MEL-002 — HTTPS: só necessário para o Caminho B da MEL-001
 
-**Tipo:** Melhoria · **Prioridade sugerida:** a discutir · **Depende de:** nada ·
-**Bloqueia:** MEL-001
+**Tipo:** Melhoria · **Prioridade sugerida:** Baixa · **Depende de:** nada ·
+**Bloqueia:** apenas o **Caminho B** da MEL-001 (não a MEL-001 inteira)
+
+> **Corrigido em 18/09.** Esta entrada dizia "pré-requisito de MEL-001" e "bloqueia
+> MEL-001". Não bloqueia: o Caminho A da MEL-001 (agente local na central) dispensa HTTPS
+> por completo. HTTPS só é necessário se a captura for feita **no navegador** do operador.
 
 ### O problema
 
