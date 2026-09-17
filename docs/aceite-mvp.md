@@ -170,6 +170,83 @@ e isso é limitação do Android.
 
 ---
 
+## 8. Custo de CPU e latência da mídia (MVP-079)
+
+Executado em 17/09 na Pi real, com **5 minutos de stream de vídeo contínuo** e
+acionamentos a cada 20 s em paralelo. O consumo do stream foi feito **de outra
+máquina, pela rede** — a posição do painel. Medir com `curl localhost` pouparia
+justamente o tráfego que é parte do custo.
+
+### Com 1 stream de vídeo ativo
+
+| critério | esperado | medido |
+|---|---|---|
+| CPU da Pi | **< 50%** | **2,5%** mediana · máx 4,7% ✅ |
+| Temperatura estável | sem subir | **47,4 °C** mediana · máx 50,1 °C ✅ |
+| Throttling | nenhum | **`0x0`** nas 149 amostras ✅ |
+| Acionar trilha durante o stream | **< 2 s** | **62 ms** mediano · pior **142 ms** ✅ |
+| Latência de vídeo | **< 1 s** | **136 ms** medianos — ver a ressalva ⚠️ |
+
+O CPU é do sistema inteiro, nos 4 núcleos. O processo `poto-api` sozinho fica em
+**9% de um núcleo**, o que dá ~2,3% da máquina. Sobra folga de 20×.
+
+### O stream em si
+
+| medida | valor |
+|---|---|
+| frames em 300 s | **2.995** = **10,0 fps** (o alvo é 10) |
+| intervalo entre frames | mediana **100 ms** · p95 107 ms · pior 352 ms |
+| tamanho por frame | 17,3 KB |
+| tráfego | 53,0 MB em 5 min = **1,4 Mbps** |
+| 1º frame do stream | 664 ms (inclui o aquecimento de 0,5 s da câmera) |
+| memória do serviço | **196,3 MB, plana** — sem crescimento em 5 min |
+| frequência da CPU | 1500–1600 MHz, sem rebaixamento |
+
+O intervalo mediano de 100 ms é exatamente o `1/FPS` configurado: a captura não
+está segurando o laço. O pior caso de 352 ms é um atraso isolado de agendamento,
+não um padrão — o p95 fica em 107 ms.
+
+### A ressalva da latência, que importa
+
+O critério pede **cronômetro filmado**, e isso não foi feito: exige apontar a
+câmera para um relógio e comparar o quadro na tela com o relógio real.
+
+O que foi medido são **136 ms medianos** (mín 121, máx 150, n=6) do pedido HTTP
+até o primeiro frame completo chegar, **com a câmera já aberta por outro
+assinante** — é o que isola captura + compressão + rede, sem o aquecimento de
+0,5 s que só o primeiro assinante paga. O RTT da rede é de 16 ms medianos.
+
+Isso cobre o caminho servidor→cliente. **Não cobre** o que o navegador acrescenta
+depois: decodificar o JPEG e pintar na tela. Pelo tamanho da folga — 136 ms
+contra 1.000 ms — é improvável que o navegador consuma os 864 ms restantes, mas
+"improvável" não é "medido", e o número do critério fica pendente até alguém
+filmar.
+
+### Não foi preciso reduzir nada
+
+O critério previa cair para 320×240 ou 5 fps se estourasse. Com 2,5% de CPU e
+50 °C, **os 640×480 a 10 fps ficam como estão** — reduzir só pioraria a imagem
+sem resolver problema nenhum.
+
+### Áudio
+
+Medido no mesmo dia, pela rede: `Content-Type` **`audio/wav`**, cabeçalho
+correto (mono, 16.000 Hz, 16 bit) chegando em **32 ms**, e **32.768 bytes =
+1,02 s de áudio em 1,2 s de relógio** — taxa de tempo real. A latência em regime
+da captura é de **100 ms**, o piso do bloco.
+
+### Auditoria (MVP-077/078)
+
+As 16 linhas do chamado de teste trazem **pares de abertura e fechamento** com
+dispositivo, operador e duração, incluindo os três caminhos de encerramento:
+pelo operador (`encerrada pelo operador`), pelo fechamento do detalhe
+(`detalhe do chamado fechado`, com `dur=8s`) e por expiração.
+
+O campo `operador` grava `10.56.15.97 (sem token)` — o endereço de quem chamou e
+se havia credencial, **sem inventar identidade** que o sistema não tem.
+
+---
+
 ## Como reproduzir o item 3
 
 O script usado está registrado aqui porque o resultado depende de *como* o

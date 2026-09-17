@@ -95,7 +95,7 @@
 | MVP-075 | Stream MJPEG | F8b | P0 | 074, 077 | ✅ Concluída |
 | MVP-076 | Captura e stream de áudio (ALSA) | F8b | P0 | 073, 077 | ✅ Concluída |
 | MVP-078 | Visualização no painel | F8b | P0 | 063, 075, 076 | ⚠️ Parcial |
-| MVP-079 | Custo de CPU e latência na Pi | F8b | P0 | 075, 076 | Pendente |
+| MVP-079 | Custo de CPU e latência na Pi | F8b | P0 | 075, 076 | ✅ Concluída |
 | MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | ✅ Concluída |
 | MVP-066b | `make deploy` e build-id verificável | F9 | P0 | 066 | ✅ Concluída |
 | MVP-067 | Unit systemd na Pi (API) | F9 | P0 | 066 | ✅ Concluída |
@@ -2798,14 +2798,70 @@
 
 ### MVP-079 — Custo de CPU e latência na Pi
 - **Descrição:** Provar que a mídia não compete com o núcleo. A Pi 5 **não tem encoder H.264 por hardware** — é por isso que o transporte é MJPEG.
-- **Prioridade:** P0 · **Depende de:** 075, 076 · **Status:** Pendente
+- **Prioridade:** P0 · **Depende de:** 075, 076 · **Status:** ✅ Concluída — medida na Pi
+  com 5 min de stream; **um critério fica com ressalva** (ver a nota)
 - **Arquivos:** `docs/aceite-mvp.md`
 - **Critérios de aceitação:**
   - Com 1 stream de vídeo ativo: **CPU da Pi abaixo de 50%** e temperatura estável
   - Acionar uma trilha **durante** um stream ativo continua respondendo em < 2 s
   - Latência de vídeo medida (cronômetro filmado) abaixo de 1 s
   - Se estourar: reduzir para 320×240 ou 5 fps e registrar o novo limite
-- **Como validar:** `htop` na Pi durante 5 min de stream, com acionamentos em paralelo
+- **Como validar:** `htop` na Pi durante 5 min de stream, com acionamentos em paralelo —
+  **executado em 17/09**, com amostragem por script em vez de `htop` (149 amostras a cada
+  2 s, de `/proc/stat` e do `thermal_zone0`, porque um número lido de olho na tela não
+  entra num documento de aceite). Detalhes completos em `docs/aceite-mvp.md` §8:
+
+  | critério | esperado | medido |
+  |---|---|---|
+  | CPU com 1 stream | < 50% | **2,5%** mediana, máx 4,7% |
+  | temperatura | estável | **47,4 °C** mediana, máx 50,1 °C |
+  | throttling | nenhum | **`0x0`** nas 149 amostras |
+  | acionamento durante o stream | < 2 s | **62 ms** mediano, pior **142 ms** |
+  | latência de vídeo | < 1 s | **136 ms** servidor→cliente ⚠️ |
+
+  O stream entregou **2.995 frames em 300 s = 10,0 fps** exatos, intervalo mediano de
+  **100 ms** (o `1/FPS` configurado), 17,3 KB por frame, **1,4 Mbps**, e memória do
+  serviço **plana em 196,3 MB**
+
+> **O consumo foi feito de outra máquina, pela rede.** Medir com `curl localhost` na
+> própria Pi pouparia justamente o tráfego que é parte do custo — e a posição que importa
+> é a do painel, não a do servidor.
+>
+> **Folga de 20× no critério de CPU.** O processo `poto-api` sozinho fica em 9% de **um**
+> núcleo, o que dá ~2,3% da máquina de 4 núcleos. É a confirmação da aposta da MVP-074:
+> MJPEG a 640×480 e 10 fps custa quase nada porque **não há compressão de vídeo** — cada
+> frame é um JPEG independente, e o JPEG a essa resolução leva menos de 2 ms.
+>
+> **Não foi preciso reduzir nada.** O critério previa cair para 320×240 ou 5 fps se
+> estourasse. Com 2,5% de CPU e 50 °C, os 640×480 a 10 fps ficam — reduzir pioraria a
+> imagem sem resolver problema nenhum. O `FPS = 10` continua sendo **escolha**, não limite:
+> a captura sustenta 31,8 fps (medido na MVP-074).
+>
+> **O critério de latência fica com ressalva, e é importante dizer qual.** Ele pede
+> cronômetro **filmado** — apontar a câmera para um relógio e comparar o quadro na tela com
+> o relógio real. Isso não foi feito, porque exige alguém no local com a câmera e um
+> relógio.
+>
+> O que foi medido são **136 ms medianos** (mín 121, máx 150, n=6) do pedido HTTP até o
+> primeiro frame completo chegar, **com a câmera já aberta por outro assinante** — é o que
+> isola captura + compressão + rede sem o aquecimento de 0,5 s que só o primeiro assinante
+> paga. O RTT da rede é de 16 ms.
+>
+> Isso cobre servidor→cliente. **Não cobre** o navegador decodificando o JPEG e pintando.
+> Pela folga — 136 ms contra 1.000 — é improvável que o navegador consuma os 864 ms
+> restantes, mas *improvável não é medido*, e o número do critério fica pendente até alguém
+> filmar. Registrar assim é melhor que apresentar o proxy como se fosse a medida pedida.
+>
+> **O pior intervalo entre frames foi 352 ms, e o p95 foi 107 ms.** A diferença é o que
+> distingue um atraso isolado de agendamento de um padrão: se a captura estivesse segurando
+> o laço, o p95 subiria junto. Não subiu.
+>
+> **Dois defeitos meus no instrumento, antes de ele medir qualquer coisa.** A URL do stream
+> foi montada sem a porta, e bateu na 80 — "Connection refused" que parecia falha do
+> serviço. E, no amostrador, `awk` interpretou o `>` de `printf "%.1f", t>0 ? …` como
+> **redirecionamento de saída**: a coluna de CPU saiu vazia e a medição foi escrita num
+> arquivo chamado `0`. Os dois dariam uma conclusão errada se eu tivesse aceitado a
+> primeira saída.
 
 ---
 
