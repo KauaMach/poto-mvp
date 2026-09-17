@@ -14,6 +14,7 @@ descuido: fechar o acionamento é tão grave quanto abrir o painel.
 
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 import pytest
@@ -298,3 +299,60 @@ def test_token_valido_sem_token_configurado(monkeypatch):
     monkeypatch.setattr(config, "PAINEL_TOKEN", "")
     assert token_valido(None) is True
     assert token_valido("qualquer") is True
+
+
+# ===========================================================================
+# O canal do totem — COR-002
+# ===========================================================================
+#
+# `/ws/chamado/{id}` é **aberto de propósito**: o totem não tem token (o
+# frontend não tem onde digitá-lo). O que torna isso aceitável é o payload —
+# só `chamado_id` e `status`. Quem inventar um protocolo recebe um status, não
+# um relato.
+
+
+def test_ws_do_totem_nao_exige_token(cliente):
+    """Se exigisse, a tela de alerta ativo perderia o status ao vivo — e o
+    totem passaria a reconectar em laço durante um pânico."""
+    cid = criar_chamado_para_ws(cliente)
+
+    with cliente.websocket_connect(f"/api/v1/ws/chamado/{cid}") as ws:
+        assert ws.receive_json()["evento"] == "conectado"
+
+
+def test_ws_do_totem_recusa_chamado_inexistente(cliente):
+    """Aceitar para depois fechar deixaria o totem reconectando contra um id
+    errado. A recusa vem antes do handshake."""
+    from starlette.websockets import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect):
+        with cliente.websocket_connect("/api/v1/ws/chamado/CALL-9999-999999"):
+            pass
+
+
+def test_ws_do_totem_nao_entrega_relato(cliente):
+    """A garantia que justifica o canal ser aberto.
+
+    Mesmo conectado sem credencial nenhuma, e mesmo pedindo um chamado que
+    existe, o que chega é a projeção — não o relato.
+    """
+    cid = criar_chamado_para_ws(cliente, texto="meu ex está me seguindo")
+
+    with cliente.websocket_connect(f"/api/v1/ws/chamado/{cid}") as ws:
+        ws.receive_json()  # conectado
+        cliente.post(f"/api/v1/chamados/{cid}/ack", headers=CABECALHOS)
+        evento = ws.receive_json()
+
+    assert set(evento["dados"]) == {"chamado_id", "status"}
+    assert "me seguindo" not in json.dumps(evento, ensure_ascii=False)
+
+
+def criar_chamado_para_ws(cliente, texto: str | None = None) -> str:
+    corpo = {
+        "evento_id": str(uuid4()),
+        "totem_id": "TOTEM-CCS-01",
+        "tipo_ocorrencia": "seguranca",
+    }
+    if texto:
+        corpo["texto_livre"] = texto
+    return cliente.post("/api/v1/eventos", json=corpo).json()["chamado_id"]

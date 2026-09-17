@@ -18,7 +18,14 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 
 from .. import canais, config, db
 from ..canais.log import mascarar
@@ -325,10 +332,57 @@ async def _pingar(websocket: WebSocket) -> None:
             return
 
 
+@router_ws.websocket("/ws/chamado/{chamado_id}")
+async def chamado_ao_vivo(websocket: WebSocket, chamado_id: str) -> None:
+    """Acompanha **um** chamado. É o canal do totem (COR-002).
+
+    A tela de alerta ativo precisa de uma coisa só: saber quando o status do
+    próprio chamado muda, para sair de "Aguardando central" para "Central
+    recebeu" sem ninguém recarregar nada.
+
+    Antes, ela assinava o `/ws` do painel — que entrega **todos** os eventos,
+    completos, a **todos** os clientes. Um aparelho de corredor recebia o
+    relato de cada pessoa que acionasse o totem, e o que impedia de aparecer na
+    tela era um filtro no cliente, depois de o dado já ter chegado ao aparelho.
+
+    **Esta rota não exige o token do painel, e é seguro que não exija**, porque
+    o que ela entrega é a projeção `para_totem`: `chamado_id` e `status`, nada
+    mais. É o que torna aceitável um canal aberto — mesmo quem inventar um
+    protocolo (e eles são sequenciais) recebe só um status, não um relato.
+
+    Recusa com 404 antes de aceitar o handshake: acompanhar um chamado que não
+    existe é sempre erro de cliente, e aceitar para depois fechar deixaria o
+    totem reconectando em laço contra um id errado.
+    """
+    if db.obter_chamado(chamado_id) is None:
+        # Fechar antes de aceitar: o servidor ASGI traduz isso em recusa de
+        # handshake, e o cliente não entra no hub nem por um instante.
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    await hub.connect(websocket, chamado_id=chamado_id)
+
+    pingador = asyncio.create_task(_pingar(websocket))
+    try:
+        await hub.enviar(websocket, "conectado", {"chamado_id": chamado_id})
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        logger.warning("conexão de totem encerrada com erro", exc_info=True)
+    finally:
+        # Mesmo padrão do `painel_ao_vivo`: o `disconnect` é o que importa, e o
+        # `cancel` evita uma tarefa de ping dormindo até 30 s depois de a
+        # conexão morrer.
+        pingador.cancel()
+        hub.disconnect(websocket)
+
+
 def _dados_da_conexao() -> dict:
     """O que o painel precisa saber no instante em que conecta.
 
     `paineis` inclui quem acabou de entrar. É o que permite a tela mostrar
     "2 operadores conectados" — e perceber que ninguém mais está olhando.
     """
-    return {"paineis": len(hub), "servidor": db.agora_iso()}
+    return {"paineis": hub.paineis(), "servidor": db.agora_iso()}

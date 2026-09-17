@@ -24,7 +24,7 @@ poderia fazer mais ou melhor)
 | [MEL-001](#mel-001--videochamada-da-central-para-o-totem-durante-o-pânico) | Videochamada da central para o totem, durante o pânico | Melhoria | Alta (pós-MVP) | Proposto |
 | [MEL-002](#mel-002--https-só-necessário-para-o-caminho-b-da-mel-001) | HTTPS: só necessário para o Caminho B da MEL-001 | Melhoria | Baixa | Proposto |
 | [MEL-003](#mel-003--rota-explícita-totem-em-vez-de-a-raiz-ser-o-totem-por-padrão) | Rota explícita `/totem`, em vez de a raiz ser o totem por padrão | Melhoria | Média | ✅ **Implementado** (18/09) |
-| [COR-002](#cor-002--o-totem-recebe-o-relato-de-todos-os-chamados-pelo-websocket) | O totem recebe o relato de **todos** os chamados pelo WebSocket | Correção | **Alta** | Proposto |
+| [COR-002](#cor-002--o-totem-recebe-o-relato-de-todos-os-chamados-pelo-websocket) | O totem recebe o relato de **todos** os chamados pelo WebSocket | Correção | **Alta** | ✅ **Implementado** (18/09) |
 | [MEL-004](#mel-004--backend-da-videochamada-sessão-recepção-de-quadros-e-relay) | Backend da videochamada: sessão, recepção de quadros e relay | Melhoria | Alta | Proposto |
 | [MEL-005](#mel-005--painel-botão-iniciar-videochamada-e-captura-da-webcam) | Painel: botão "Iniciar videochamada" e captura da webcam | Melhoria | Alta | Proposto |
 | [MEL-006](#mel-006--totem-o-operador-aparece-na-tela-de-alerta-ativo) | Totem: o operador aparece na tela de alerta ativo | Melhoria | Alta | Proposto |
@@ -409,6 +409,8 @@ Verificado por mutação: apagar a checagem explícita quebra 1 verificação; d
 
 **Tipo:** Correção · **Prioridade sugerida:** **Alta** · **Levantado por:** encontrado ao
 desenhar a MEL-004, em 18/09
+**Status:** ✅ **Implementado em 18/09, pelo Caminho A** — mais a projeção, que o caminho A
+sozinho não dava. Ver "Como ficou".
 
 ### O problema
 
@@ -461,6 +463,35 @@ entrega tudo a todos pioraria o problema em vez de contorná-lo.
 - **C — o totem para de usar WebSocket** e passa a consultar `GET /chamados/{id}`. Perde o
   tempo real (< 1 s é requisito da tela de alerta) e esse endpoint exige o token do painel,
   que o totem não tem.
+
+### Como ficou
+
+Os **dois** cortes, porque o caminho A sozinho não bastava:
+
+- **`WS /ws/chamado/{chamado_id}`** (novo) — o canal do totem. O hub ganhou escopo por
+  cliente (`_Cliente.chamado_id`): `None` é painel e recebe tudo; preenchido recebe só
+  aquele chamado.
+- **`para_totem()` / `CAMPOS_TOTEM = ("chamado_id", "status")`** — lista de permitidos em
+  `models.py`, ao lado do `para_painel()`. Mesmo padrão do `CAMPOS_NOTIFICAVEIS`: coluna
+  nova no `ChamadoOut` amanhã não passa a vazar por esquecimento.
+
+**Por que filtrar por id não bastava:** os protocolos são sequenciais
+(`CALL-2026-000037`). Um canal que entregasse o `ChamadoOut` completo do chamado pedido
+deixaria quem inventasse um número receber o relato daquela pessoa. O escopo limita
+*quais* eventos chegam; a projeção limita *o que* cada um carrega.
+
+**A rota é aberta, sem token, e é seguro que seja** — o totem não tem onde digitar token
+(lacuna conhecida da MVP-040). O que a torna aceitável é justamente a projeção: quem
+conectar num protocolo inventado recebe um status, não um relato. Recusa com 1008 antes do
+handshake se o chamado não existe, para o totem não reconectar em laço contra um id errado.
+
+`hub.paineis()` passou a contar só clientes sem escopo: um totem em alerta ativo não é um
+operador, e contá-lo faria a central achar que há mais gente olhando do que há.
+
+Verificado por mutação, quatro direções: totem voltar a receber o payload completo quebra
+3 testes; escopo deixar de filtrar quebra 1; `texto_livre` entrar na allowlist quebra 3; e
+o painel **perder** o relato quebra 2 — esse último é o par que impede a "correção" de
+virar regressão.
 
 ### O que o totem de fato precisa
 

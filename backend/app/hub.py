@@ -21,8 +21,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 
 from fastapi import WebSocket
+
+from .models import para_totem
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,24 @@ logger = logging.getLogger(__name__)
 # cliente que não lê mais fica pendurado para sempre: o envio não falha, e a
 # conexão morta nunca sairia do conjunto.
 TIMEOUT_ENVIO = 2.0
+
+
+@dataclass
+class _Cliente:
+    """Uma conexão: o cadeado de escrita e o escopo dela (COR-002).
+
+    `chamado_id is None` é um painel — recebe tudo, completo. Preenchido, é um
+    totem acompanhando o próprio alerta: recebe só aquele chamado, projetado.
+    """
+
+    cadeado: asyncio.Lock
+    chamado_id: str | None = None
+
+    def recebe(self, dados: dict) -> bool:
+        """Se este evento é do escopo deste cliente."""
+        if self.chamado_id is None:
+            return True
+        return dados.get("chamado_id") == self.chamado_id
 
 
 class Hub:
@@ -52,21 +73,38 @@ class Hub:
     """
 
     def __init__(self) -> None:
-        self._clientes: dict[WebSocket, asyncio.Lock] = {}
+        self._clientes: dict[WebSocket, _Cliente] = {}
 
     def __len__(self) -> int:
-        """Quantos painéis estão conectados agora."""
+        """Quantos clientes estão conectados agora, de qualquer escopo."""
         return len(self._clientes)
 
-    async def connect(self, ws: WebSocket) -> None:
+    def paineis(self) -> int:
+        """Quantos **painéis** — clientes sem escopo restrito.
+
+        Separado do `__len__` porque é o que a mensagem `conectado` informa, e
+        um totem em alerta ativo não deve contar como painel na tela da central.
+        """
+        return sum(1 for c in self._clientes.values() if c.chamado_id is None)
+
+    async def connect(self, ws: WebSocket, chamado_id: str | None = None) -> None:
         """Aceita o handshake e registra a conexão.
 
         O aceite fica aqui, e não no endpoint, para que não exista caminho em
         que um cliente entre no conjunto sem ter sido aceito. Se o handshake
         falhar, a exceção sobe e nada é registrado.
+
+        `chamado_id` é o **escopo** (COR-002). `None` é um painel: recebe todos
+        os eventos, completos. Preenchido, é um totem: recebe só os eventos
+        daquele chamado, e **projetados** por `para_totem`.
         """
         await ws.accept()
-        self._clientes[ws] = asyncio.Lock()
+        self._clientes[ws] = _Cliente(asyncio.Lock(), chamado_id)
+
+    def escopo(self, ws: WebSocket) -> str | None:
+        """O chamado que este cliente acompanha, ou `None` se é painel."""
+        cliente = self._clientes.get(ws)
+        return cliente.chamado_id if cliente else None
 
     def disconnect(self, ws: WebSocket) -> None:
         """Remove a conexão e o cadeado dela. Idempotente de propósito.
@@ -84,11 +122,13 @@ class Hub:
         dirigidos a uma conexão só. Passa pelo mesmo cadeado do broadcast — é o
         ponto inteiro de o cadeado existir.
         """
-        cadeado = self._clientes.get(ws)
-        if cadeado is None:
+        cliente = self._clientes.get(ws)
+        if cliente is None:
             return False
         try:
-            await self._enviar(ws, cadeado, {"evento": evento, "dados": dados})
+            await self._enviar(
+                ws, cliente.cadeado, {"evento": evento, "dados": dados}
+            )
         except Exception as erro:
             logger.warning("painel removido do hub (%s): %r", evento, erro)
             self.disconnect(ws)
@@ -96,21 +136,47 @@ class Hub:
         return True
 
     async def broadcast(self, evento: str, dados: dict) -> None:
-        """Envia `{evento, dados}` a todos os painéis conectados.
+        """Envia `{evento, dados}` a cada cliente, **no escopo dele**.
 
         Nunca levanta: com zero clientes é um no-op, e a falha de um cliente é
         contida — ele sai do conjunto e os demais recebem normalmente.
+
+        **O escopo é aplicado aqui, no servidor** (COR-002). Antes, todo cliente
+        recebia todo evento completo, e quem separava era o filtro no cliente —
+        o que significa que o dado já havia chegado ao aparelho. Um totem de
+        corredor recebia o relato de todas as outras pessoas.
+
+        Dois cortes, e são necessários os dois:
+
+        - **quais** eventos: um cliente com escopo só recebe os do chamado dele;
+        - **o que** cada evento carrega: para esse cliente, a projeção
+          `para_totem` (só `chamado_id` e `status`).
+
+        Sem o segundo corte, quem adivinhasse um protocolo — e eles são
+        sequenciais — receberia o relato daquela pessoa.
         """
         # Itera sobre uma cópia: cada `await` abaixo devolve o controle ao loop,
         # e uma desconexão nesse intervalo mutaria o dicionário durante a
         # iteração.
-        destinos = list(self._clientes.items())
+        destinos = [
+            (ws, cliente)
+            for ws, cliente in self._clientes.items()
+            if cliente.recebe(dados)
+        ]
         if not destinos:
             return
 
-        mensagem = {"evento": evento, "dados": dados}
+        completa = {"evento": evento, "dados": dados}
+        reduzida = {"evento": evento, "dados": para_totem(dados)}
         resultados = await asyncio.gather(
-            *(self._enviar(ws, cadeado, mensagem) for ws, cadeado in destinos),
+            *(
+                self._enviar(
+                    ws,
+                    cliente.cadeado,
+                    completa if cliente.chamado_id is None else reduzida,
+                )
+                for ws, cliente in destinos
+            ),
             return_exceptions=True,
         )
 

@@ -13,6 +13,7 @@ recebe assim mesmo.
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 from fastapi import FastAPI, WebSocket
@@ -512,3 +513,133 @@ async def test_cadeado_sai_junto_com_o_cliente(hub):
     hub.disconnect(painel)
 
     assert painel not in hub._clientes
+
+
+# ===========================================================================
+# Escopo por cliente — COR-002
+# ===========================================================================
+#
+# O bug que isto fecha: a tela de alerta do totem assinava o mesmo `/ws` do
+# painel, e o `broadcast` mandava todo evento, completo, a todo cliente. Um
+# aparelho num corredor público recebia o `texto_livre` — o relato — de cada
+# pessoa que acionasse o totem. O que impedia de aparecer na tela era um filtro
+# **no cliente**, depois de o dado já ter chegado ao aparelho.
+#
+# São dois cortes, e os testes cobram os dois separadamente: **quais** eventos
+# chegam (escopo) e **o que** cada um carrega (projeção). Um sem o outro não
+# resolve — protocolos são sequenciais, então filtrar só por id deixaria quem
+# adivinhasse um número receber o relato daquela pessoa.
+
+CHAMADO_COMPLETO = {
+    "chamado_id": "CALL-2026-000001",
+    "totem_id": "TOTEM-CCS-01",
+    "tipo_ocorrencia": "mulher",
+    "modo": "discreto",
+    "origem_acionamento": "touch",
+    "gravidade": "risco_potencial",
+    "canal_roteado": "sala_lilas",
+    "fallback": "central_180",
+    "status": "notificado",
+    "texto_livre": "meu ex está me seguindo desde o estacionamento",
+    "observacao": "equipe a caminho",
+    "timestamp_local": None,
+    "created_at": "2026-09-18T12:00:00+00:00",
+    "updated_at": "2026-09-18T12:00:00+00:00",
+    "acked_at": None,
+}
+
+
+async def test_totem_nao_recebe_o_relato(hub):
+    """**A garantia central da COR-002.**
+
+    O relato é o campo mais sensível do sistema — é a voz de quem pediu ajuda.
+    Ele sai para o painel de propósito (quem atende precisa dele) e não pode
+    sair para um aparelho de corredor.
+    """
+    totem = PainelFalso()
+    await hub.connect(totem, chamado_id="CALL-2026-000001")
+
+    await hub.broadcast("atualizado", dict(CHAMADO_COMPLETO))
+
+    (mensagem,) = totem.recebidas
+    assert "texto_livre" not in mensagem["dados"]
+    assert "me seguindo" not in json.dumps(mensagem, ensure_ascii=False)
+
+
+async def test_totem_recebe_so_id_e_status(hub):
+    """A projeção é lista de **permitidos**, não de proibidos.
+
+    Uma coluna nova no `ChamadoOut` amanhã não passa a vazar por esquecimento —
+    é a mesma razão do `CAMPOS_NOTIFICAVEIS` em `canais/base.py`.
+    """
+    totem = PainelFalso()
+    await hub.connect(totem, chamado_id="CALL-2026-000001")
+
+    await hub.broadcast("atualizado", dict(CHAMADO_COMPLETO))
+
+    (mensagem,) = totem.recebidas
+    assert set(mensagem["dados"]) == {"chamado_id", "status"}
+    assert mensagem["dados"]["status"] == "notificado"
+
+
+async def test_totem_nao_recebe_evento_de_outro_chamado(hub):
+    """O outro corte: **quais** eventos chegam.
+
+    Sem isto, o totem receberia um status de cada chamado do campus — não é o
+    relato, mas também não é da conta dele.
+    """
+    totem = PainelFalso()
+    await hub.connect(totem, chamado_id="CALL-2026-000001")
+
+    await hub.broadcast(
+        "novo_chamado", {**CHAMADO_COMPLETO, "chamado_id": "CALL-2026-000099"}
+    )
+
+    assert totem.recebidas == []
+
+
+async def test_painel_continua_recebendo_tudo(hub):
+    """O par necessário: restringir o totem não pode ter cortado o painel.
+
+    Sem este teste, "o relato nunca é transmitido" passaria pelos de cima — e
+    seria regressão grave, porque o painel **precisa** do relato para decidir
+    como responder.
+    """
+    painel = PainelFalso()
+    await hub.connect(painel)  # sem escopo
+
+    await hub.broadcast("atualizado", dict(CHAMADO_COMPLETO))
+
+    (mensagem,) = painel.recebidas
+    assert mensagem["dados"]["texto_livre"] == (
+        "meu ex está me seguindo desde o estacionamento"
+    )
+    assert set(mensagem["dados"]) == set(CHAMADO_COMPLETO)
+
+
+async def test_painel_e_totem_no_mesmo_broadcast_recebem_coisas_diferentes(hub):
+    """O caso real: a central olhando o painel enquanto o totem está em alerta.
+
+    Um broadcast, dois clientes, duas visões — é isso que o escopo no servidor
+    entrega e que o filtro no cliente não entregava.
+    """
+    painel, totem = PainelFalso(), PainelFalso()
+    await hub.connect(painel)
+    await hub.connect(totem, chamado_id="CALL-2026-000001")
+
+    await hub.broadcast("atualizado", dict(CHAMADO_COMPLETO))
+
+    assert "texto_livre" in painel.recebidas[0]["dados"]
+    assert "texto_livre" not in totem.recebidas[0]["dados"]
+
+
+async def test_paineis_nao_conta_totens(hub):
+    """A tela da central mostra "N operadores conectados". Um totem em alerta
+    ativo não é um operador, e contá-lo faria a central achar que há mais gente
+    olhando do que há."""
+    await hub.connect(PainelFalso())
+    await hub.connect(PainelFalso())
+    await hub.connect(PainelFalso(), chamado_id="CALL-2026-000001")
+
+    assert hub.paineis() == 2
+    assert len(hub) == 3

@@ -50,8 +50,14 @@ export function AlertaAtivo({ alerta, desde, offline = false, onVoltar }: Props)
   );
 
   /* Offline não há WebSocket para assinar, e tentar reconectar em laço numa
-   * tela de pânico só aquece o aparelho. */
-  useEventosWS(aoEvento, !offline);
+   * tela de pânico só aquece o aparelho.
+   *
+   * O terceiro argumento é o escopo (COR-002): o totem assina
+   * `/ws/chamado/{id}` e recebe **só** este chamado, **só** com `chamado_id` e
+   * `status`. Antes assinava o `/ws` do painel e recebia o relato de todas as
+   * outras pessoas — o filtro do `aoEvento` abaixo descartava, mas depois de o
+   * dado já ter chegado ao aparelho. */
+  useEventosWS(aoEvento, !offline, alerta.chamado_id);
 
   const escalonar = useCallback(
     async (canal: CanalOpcao) => {

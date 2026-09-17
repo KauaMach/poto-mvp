@@ -1,8 +1,18 @@
-/* Assinatura do WebSocket do painel — MVP-054.
+/* Assinatura do WebSocket — MVP-054, escopo em COR-002.
  *
  * O totem usa isto para acompanhar **o próprio chamado** durante um alerta
  * ativo: é o que faz a tela sair de "Aguardando central" para "Central
  * recebeu" sem ninguém recarregar nada.
+ *
+ * **Dois canais, e a diferença é de privacidade, não de conveniência.** O
+ * painel assina `/ws` e recebe todos os eventos, completos — ele precisa, e
+ * está atrás do token. O totem assina `/ws/chamado/{id}` e recebe **só** o
+ * chamado dele, **só** com `chamado_id` e `status`.
+ *
+ * Antes da COR-002 o totem assinava `/ws` também, e o servidor entregava tudo
+ * a todos: um aparelho de corredor recebia o `texto_livre` — o relato — de
+ * cada pessoa que acionasse o totem. O que impedia de aparecer na tela era o
+ * filtro daqui, no cliente, depois de o dado já ter chegado ao aparelho.
  *
  * Reconecta com espera crescente. Um totem em alerta ativo com a conexão caída
  * não pode ficar tentando a cada 100 ms — isso aquece o aparelho e enche o log
@@ -20,6 +30,8 @@ export type EstadoWS = "conectando" | "aberto" | "fechado";
 export function useEventosWS(
   ao: (evento: EventoWS) => void,
   ativo = true,
+  /** Chamado a acompanhar. Omitido = painel (todos os eventos, completos). */
+  chamadoId?: string,
 ): EstadoWS {
   /* `estadoSocket` guarda só o que vem do socket. O caso `!ativo` é
    * **derivado** no retorno, não armazenado: guardá-lo exigiria um `setState`
@@ -46,7 +58,12 @@ export function useEventosWS(
       /* `wss` quando a página é https. Fixar `ws` quebraria o painel servido
        * por HTTPS, e fixar `wss` quebraria o totem na rede local, que é HTTP. */
       const esquema = location.protocol === "https:" ? "wss:" : "ws:";
-      socket = new WebSocket(`${esquema}//${location.host}/api/v1/ws`);
+      /* Com `chamadoId`, o canal restrito da COR-002. O `encodeURIComponent`
+       * porque o protocolo entra no caminho da URL. */
+      const caminho = chamadoId
+        ? `/api/v1/ws/chamado/${encodeURIComponent(chamadoId)}`
+        : "/api/v1/ws";
+      socket = new WebSocket(`${esquema}//${location.host}${caminho}`);
       setEstadoSocket("conectando");
 
       socket.onopen = () => {
@@ -87,7 +104,9 @@ export function useEventosWS(
         socket.close();
       }
     };
-  }, [ativo]);
+    /* `chamadoId` na dependência: sem ele, o socket continuaria no canal
+     * antigo se o chamado mudasse — e o totem acompanharia o alerta errado. */
+  }, [ativo, chamadoId]);
 
   /* Derivado: sem socket ativo não há conexão a reportar. */
   return ativo ? estadoSocket : "fechado";

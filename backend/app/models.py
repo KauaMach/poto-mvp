@@ -288,6 +288,36 @@ def para_painel(chamado: dict) -> dict:
     return ChamadoOut.model_validate(chamado).model_dump(mode="json")
 
 
+# Campos que o **totem** pode receber pelo WebSocket — COR-002.
+#
+# Lista de permitidos, e pelo mesmo motivo do `CAMPOS_NOTIFICAVEIS` em
+# `canais/base.py`: uma coluna acrescentada ao `ChamadoOut` amanhã não passa a
+# vazar para um aparelho de corredor por esquecimento.
+#
+# O problema que isto corrige: a tela de alerta ativo do totem assinava o mesmo
+# `/ws` do painel, e o `broadcast` não filtrava por cliente. O totem recebia o
+# `ChamadoOut` **completo de todos os chamados** — inclusive o `texto_livre`, o
+# relato de quem pediu ajuda. A única proteção era um filtro no cliente, que
+# descartava o que não era do chamado dele **depois** de o dado já ter chegado
+# ao aparelho: visível no DevTools e no tráfego, que é `ws://` sem TLS.
+#
+# O totem precisa de duas coisas, e só: saber **qual** chamado e em **que
+# estado** ele está. É disso que a tela vive ("Aguardando central" → "Central
+# recebeu" → "Atendimento a caminho"). Não precisa do relato, nem do canal, nem
+# da gravidade, nem de nada de outro chamado.
+#
+# Filtrar por `chamado_id` sozinho não resolveria: quem adivinhasse um protocolo
+# — e eles são sequenciais — receberia o relato daquela pessoa. O escopo limita
+# *quais* eventos chegam; esta lista limita *o que* cada evento carrega. As duas
+# coisas juntas é que fecham o caminho.
+CAMPOS_TOTEM = ("chamado_id", "status")
+
+
+def para_totem(dados: dict) -> dict:
+    """Projeta um evento no que o totem pode ver (COR-002)."""
+    return {campo: dados.get(campo) for campo in CAMPOS_TOTEM}
+
+
 class ChamadoUpdate(BaseModel):
     """Atualização parcial pelo operador da central."""
 
