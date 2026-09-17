@@ -93,7 +93,7 @@
 | MVP-074 | Captura de vídeo (picamera2 / V4L2) | F8b | P0 | 073 | ✅ Concluída |
 | MVP-077 | **Sessão de mídia com auditoria** | F8b | P0 | 073, 017 | ✅ Concluída |
 | MVP-075 | Stream MJPEG | F8b | P0 | 074, 077 | ✅ Concluída |
-| MVP-076 | Captura e stream de áudio (ALSA) | F8b | P0 | 073, 077 | ⚠️ Parcial |
+| MVP-076 | Captura e stream de áudio (ALSA) | F8b | P0 | 073, 077 | ✅ Concluída |
 | MVP-078 | Visualização no painel | F8b | P0 | 063, 075, 076 | ⚠️ Parcial |
 | MVP-079 | Custo de CPU e latência na Pi | F8b | P0 | 075, 076 | Pendente |
 | MVP-066 | Build integrado servido pelo backend (rede) | F9 | P0 | 026, 055, 060 | ✅ Concluída |
@@ -2522,8 +2522,8 @@
 
 ### MVP-076 — Captura e stream de áudio
 - **Descrição:** Ouvir o local do totem durante um chamado.
-- **Prioridade:** P0 · **Depende de:** 073, 077 · **Status:** ⚠️ Parcial — caminho de
-  software completo e medido na Pi; **a escuta audível está bloqueada por hardware**
+- **Prioridade:** P0 · **Depende de:** 073, 077 · **Status:** ✅ Concluída — medida na Pi,
+  com sinal real; ver a **correção** sobre o "silêncio digital" de 16/09
 - **Arquivos:** `backend/app/midia/microfone.py`, `backend/app/api/midia.py`,
   `backend/tests/test_microfone.py`, `backend/tests/test_midia_sessao.py`
 - **Critérios de aceitação:**
@@ -2542,29 +2542,49 @@
     *"WAVE audio, Microsoft PCM, 16 bit, mono 16000 Hz"*
   - dois ouvintes juntos: **um só** `arecord`, 9.600 bytes idênticos para cada
   - **nenhum `arecord` órfão** depois de stream, clipe ou erro
-  - 49 testes (24 do módulo + 25 de rota); o "ouvir" depende da MVP-078 e do hardware
+  - 49 testes (24 do módulo + 25 de rota)
+  - **pela rede, em 17/09** (posição do painel, não `localhost`): `Content-Type`
+    **`audio/wav`**, cabeçalho correto (`RIFF`/`WAVE`, mono, 16.000 Hz, 16 bit,
+    `tam_data = 0xFFFFFFFF`) chegando em **32 ms**, e **32.768 bytes = 1,02 s de áudio
+    em 1,2 s de relógio** — taxa de tempo real
+  - **com sinal real**: pico 684/32767 no primeiro segundo pelo HTTP, e 99,7% de amostras
+    não-zero no `arecord` direto
 
-> **O microfone da Pi entrega silêncio digital, e isso é achado de hardware, não de
-> código.** Com ganho em 100% e 3 s de captura: **48.000 amostras, 0 não-zero, pico 0**.
-> Não é sala quieta — sala quieta tem piso de ruído. É zero absoluto.
+> **CORREÇÃO de 17/09: o que eu chamei de "silêncio digital por falha de hardware" em
+> 16/09 estava errado.** A nota anterior dizia que o dongle entregava zeros e que era
+> preciso trocá-lo antes da demonstração. Não era.
 >
-> O dongle é um **Jieli Technology USB Composite Device (4c4a:4155)**. Ele enumera
-> corretamente, declara `wTerminalType 0x0201 Microphone`, aceita S16_LE mono 48 kHz e
-> entrega a quantidade **exata** de bytes pedida. Só que todos são zero. O mixer está
-> aberto (`Mic` em 147 [100%] [on], AGC ligado) e não há saída no cartão 2, então não é
-> jack de fone confundido com entrada.
+> O que foi medido em 16/09 é verdade: 48.000 amostras, 0 não-zero, pico 0, com o mixer
+> aberto. O que estava errado foi a **conclusão**. A Pi reiniciou em 17/09 às 10:16 e, com
+> o **mesmo dispositivo** (Jieli 4c4a:4155, mesmo `lsusb`, mesmo mixer em 147 [100%]
+> [on]), o `arecord` direto passou a dar **47.862 de 48.000 amostras não-zero, pico
+> 32766**.
 >
-> **Consequência honesta:** a MVP-076 fica Parcial. Tudo o que o software controla está
-> medido; a única coisa que falta é a que depende de o dispositivo produzir som. Isso
-> precisa ser resolvido no hardware — trocar o dongle ou conferir o microfone — antes da
-> demonstração.
+> O diagnóstico certo é outro, e é mais útil: **um dispositivo de áudio USB pode travar
+> entregando zeros**, e a reinicialização (ou a reenumeração do USB) limpa esse estado. O
+> caso anterior foi precedido de várias sessões de captura interrompidas à força nos
+> testes da própria task, que é a explicação mais provável.
 >
-> Este é exatamente o cenário que o comentário do `_wav` chama de **silêncio falso**: um
-> microfone mudo é indistinguível de um local calmo, e num totem de emergência isso é a
-> pior falha possível, porque o operador conclui que está tudo bem. O código já encerra o
-> stream em erro em vez de entregar silêncio, mas **nenhum código distingue zero de
-> calma** — a detecção de mudez precisaria medir o nível do sinal, e isso não está no
-> escopo do MVP.
+> **A lição de operação:** o sintoma é **indistinguível de uma sala calma**. É o
+> "silêncio falso" que o comentário do `_wav` nomeia — e num totem de emergência é a pior
+> falha possível, porque o operador conclui que está tudo bem. Antes de uma
+> demonstração, vale um teste de nível, não um teste de "o stream abriu":
+>
+> ```bash
+> arecord -D plughw:2,0 -f S16_LE -r 16000 -c 1 -d 3 -t raw 2>/dev/null \
+>   | python3 -c "import array,sys; a=array.array('h'); a.frombytes(sys.stdin.buffer.read()); print('pico', max(abs(x) for x in a))"
+> ```
+>
+> Pico 0 significa dispositivo travado, não sala silenciosa. Reinicie ou reconecte o USB.
+>
+> **Nenhum código distingue zero de calma**, e detectar mudez exigiria medir o nível do
+> sinal no servidor — fora do escopo do MVP, mas registrado aqui como o próximo passo
+> óbvio se o totem for para operação real.
+>
+> **Ganho medido em sala quieta**, para quem for ajustar: com o padrão (AGC ligado,
+> captura em 100%) o piso de ruído fica em **pico ~900, rms 134** — saudável, sem
+> saturar. Com AGC desligado cai para rms 42, e com ganho em 60% para rms 12. O padrão é o
+> certo para um corredor; não há o que mexer.
 
 > **`arecord`, não `sounddevice`.** O segundo é binding de PortAudio, e na Pi o import
 > morre com `OSError: PortAudio library not found` — resolver exigiria `libportaudio2` do
