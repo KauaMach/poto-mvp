@@ -582,9 +582,15 @@ async def test_totem_recebe_so_id_e_status(hub):
     # que ampliá-la seja uma decisão visível. Comparar com a própria constante
     # faria o teste concordar com qualquer campo que alguém acrescentasse.
     #
-    # `stream_url` entrou na MEL-006 — é como o totem descobre onde buscar o
-    # vídeo do operador. Vem `None` em `atualizado`, que não tem esse campo.
-    assert set(mensagem["dados"]) == {"chamado_id", "status", "stream_url"}
+    # `stream_url` entrou na MEL-006 e `audio_url` na MEL-007 — é como o totem
+    # descobre onde buscar vídeo e voz do operador. Vêm `None` em `atualizado`,
+    # que não tem esses campos.
+    assert set(mensagem["dados"]) == {
+        "chamado_id",
+        "status",
+        "stream_url",
+        "audio_url",
+    }
     assert mensagem["dados"]["status"] == "notificado"
     assert mensagem["dados"]["stream_url"] is None
 

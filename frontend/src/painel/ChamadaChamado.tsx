@@ -22,10 +22,10 @@ import {
 } from "../comum/api";
 import type { Chamado, ChamadaSessao } from "../comum/tipos";
 import {
+  abrirCanal,
+  type Canal,
   EXPLICACAO,
   indisponivel,
-  transmitir,
-  type Transmissao,
 } from "./transmissao";
 
 type Props = { chamado: Chamado };
@@ -36,7 +36,11 @@ export function ChamadaChamado({ chamado }: Props) {
   const [ocupado, setOcupado] = useState(false);
   /* A transmissão num `ref` e não em estado: ela não é renderizada, e guardá-la
    * em estado provocaria um render a cada troca sem nada mudar na tela. */
-  const transmissao = useRef<Transmissao | null>(null);
+  const transmissao = useRef<Canal | null>(null);
+  /* `false` = o vídeo subiu e o áudio não. A tela precisa dizer: um operador
+   * que pensa estar sendo ouvido e não está é pior que um que sabe que só
+   * aparece. */
+  const [comAudio, setComAudio] = useState(true);
 
   const encerrar = useCallback(async () => {
     /* Para a câmera **primeiro**. É o que apaga a luz da webcam do operador, e
@@ -62,10 +66,16 @@ export function ChamadaChamado({ chamado }: Props) {
       /* A captura vem **depois** de a sessão existir: sem `envio_url` não há
        * para onde mandar quadro, e pedir a câmera antes acenderia a luz da
        * webcam para uma chamada que pode ser recusada com 409. */
-      transmissao.current = await transmitir(aberta.envio_url, (falha) => {
-        setErro(mensagem(falha));
-        setSessao(null);
-      });
+      const canal = await abrirCanal(
+        aberta.envio_url,
+        aberta.audio_url,
+        (falha) => {
+          setErro(mensagem(falha));
+          setSessao(null);
+        },
+      );
+      transmissao.current = canal;
+      setComAudio(canal.comAudio);
       setSessao(aberta);
     } catch (falha) {
       setErro(mensagem(falha));
@@ -114,7 +124,9 @@ export function ChamadaChamado({ chamado }: Props) {
             TRANSMITINDO
           </span>
           <span className="poto-chamada-nota">
-            Sua câmera está na tela do totem
+            {comAudio
+              ? "Sua câmera e seu microfone estão no totem"
+              : "Sua câmera está no totem — sem áudio"}
           </span>
           <button
             type="button"

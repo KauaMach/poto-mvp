@@ -324,7 +324,7 @@ def para_painel(chamado: dict) -> dict:
 # não. Quem for tratar isso tem que dar credencial ao totem primeiro — não
 # tentar esconder a URL, que é o que um `chamado_id` aleatório faria parecer
 # resolver sem resolver.
-CAMPOS_TOTEM = ("chamado_id", "status", "stream_url")
+CAMPOS_TOTEM = ("chamado_id", "status", "stream_url", "audio_url")
 
 
 def para_totem(dados: dict) -> dict:
@@ -371,6 +371,8 @@ class ChamadaOut(BaseModel):
     sessao_id: str
     envio_url: str
     stream_url: str
+    # Uma URL só: a central publica com `POST`, o totem consome com `GET`.
+    audio_url: str
     expira_em: int = Field(description="Segundos até a sessão expirar.")
 
 

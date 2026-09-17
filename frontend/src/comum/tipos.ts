@@ -121,7 +121,10 @@ export type EventoWS =
   /* MEL-006. No canal do totem (`/ws/chamado/{id}`) estes chegam projetados —
    * só `chamado_id`, `status` e `stream_url` (`CAMPOS_TOTEM`). É assim que a
    * tela de alerta descobre onde buscar o vídeo do operador. */
-  | { evento: "chamada_iniciada"; dados: { chamado_id: string; stream_url: string } }
+  | {
+      evento: "chamada_iniciada";
+      dados: { chamado_id: string; stream_url: string; audio_url: string };
+    }
   | { evento: "chamada_encerrada"; dados: { chamado_id: string } };
 
 /* --- Mídia (MVP-073 / MVP-077) ------------------------------------------- */
@@ -168,5 +171,7 @@ export type ChamadaSessao = {
   sessao_id: string;
   envio_url: string;
   stream_url: string;
+  /** Uma URL só: a central publica com `POST`, o totem consome com `GET`. */
+  audio_url: string;
   expira_em: number;
 };

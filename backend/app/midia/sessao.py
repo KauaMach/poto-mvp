@@ -360,10 +360,19 @@ def ativas() -> list[Sessao]:
         return [s for s in _sessoes.values() if not s.expirada]
 
 
-def urls_da_chamada(sessao: Sessao) -> tuple[str, str]:
-    """`(envio_url, stream_url)` de uma sessão de chamada (MEL-004)."""
+def urls_da_chamada(sessao: Sessao) -> tuple[str, str, str]:
+    """`(envio_quadro, stream_video, audio)` de uma sessão de chamada.
+
+    O áudio é **uma** URL só: a central publica com `POST` e o totem consome com
+    `GET` no mesmo caminho. O vídeo tem duas porque os caminhos diferem
+    (`/quadro` para enviar, `/stream` para consumir) — herança da MEL-004, onde
+    o `/stream` já existia no padrão dos outros streams.
+
+    Montadas aqui, num lugar só, porque o formato do id de sessão não é assunto
+    de quem chama.
+    """
     base = f"/api/v1/midia/chamada/{sessao.sessao_id}"
-    return f"{base}/quadro", f"{base}/stream"
+    return f"{base}/quadro", f"{base}/stream", f"{base}/audio"
 
 
 def url_do_stream(sessao: Sessao) -> str:

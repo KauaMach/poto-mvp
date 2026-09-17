@@ -30,7 +30,7 @@ from .. import midia
 from ..hub import hub
 from ..midia import camera, microfone
 from ..midia import sessao as sessoes
-from ..midia.chamada import TAMANHO_MAXIMO, SemQuadro, repasse
+from ..midia.chamada import TAMANHO_MAXIMO, SemAudio, SemQuadro, repasse
 from ..models import ChamadaOut, MidiaIn, MidiaOut
 from .deps import CABECALHO, exigir_token
 
@@ -105,20 +105,22 @@ async def abrir_chamada(chamado_id: str, request: Request) -> ChamadaOut:
     except sessoes.SessaoRecusada as recusa:
         raise HTTPException(status_code=recusa.status, detail=recusa.detalhe) from None
 
-    envio, stream = sessoes.urls_da_chamada(s)
+    envio, stream, audio = sessoes.urls_da_chamada(s)
 
-    # Avisa o totem **por onde** buscar o vídeo (MEL-006). É o WebSocket com
-    # escopo da COR-002 que entrega isso, então só o aparelho acompanhando este
-    # chamado recebe — e a `stream_url` está na allowlist `CAMPOS_TOTEM`
-    # justamente para poder passar.
+    # Avisa o totem **por onde** buscar vídeo e áudio (MEL-006/007). É o
+    # WebSocket com escopo da COR-002 que entrega isso, então só o aparelho
+    # acompanhando este chamado recebe — e as duas URLs estão na allowlist
+    # `CAMPOS_TOTEM` justamente para poder passar.
     await hub.broadcast(
-        "chamada_iniciada", {"chamado_id": chamado_id, "stream_url": stream}
+        "chamada_iniciada",
+        {"chamado_id": chamado_id, "stream_url": stream, "audio_url": audio},
     )
 
     return ChamadaOut(
         sessao_id=s.sessao_id,
         envio_url=envio,
         stream_url=stream,
+        audio_url=audio,
         expira_em=sessoes.DURACAO_SEG,
     )
 
@@ -472,6 +474,92 @@ async def _multipart_chamada(
             # `<img>` do totem mantém a última imagem, e insistir manteria a
             # conexão aberta contra alguém que já foi embora.
             logger.info("chamada sem quadros: %s", s.sessao_id)
+            return
+
+
+@router_stream.post("/midia/chamada/{sessao_id}/audio", status_code=204)
+async def publicar_audio(sessao_id: str, request: Request) -> None:
+    """Recebe um pedaço de PCM cru da central (MEL-007).
+
+    **PCM cru e não um formato comprimido**, e a razão é de reaproveitamento: o
+    totem consome pelo mesmo mecanismo que o microfone da Pi já usa desde a
+    MVP-076 — um WAV em streaming que toca num `<audio>` sem uma linha de
+    JavaScript de player. Mandar Opus ou WebM exigiria decodificar aqui, ou MSE
+    no totem, para chegar no mesmo lugar.
+
+    O formato tem que casar com o que o cabeçalho declara: **16 kHz, mono,
+    16 bit little-endian**. Quem captura reamostra (ver `transmissao.ts`).
+    """
+    s = _validar_chamada(sessao_id)
+
+    declarado = request.headers.get("content-length")
+    if declarado and int(declarado) > TAMANHO_MAXIMO:
+        raise HTTPException(status_code=413, detail="trecho acima do limite")
+
+    corpo = await request.body()
+    if not corpo:
+        raise HTTPException(status_code=422, detail="trecho vazio")
+    if len(corpo) > TAMANHO_MAXIMO:
+        raise HTTPException(status_code=413, detail="trecho acima do limite")
+    # Amostra de 16 bit: um número ímpar de bytes significa meia amostra, e
+    # concatenar isso desalinha todo o resto do fluxo — o sintoma é chiado, não
+    # silêncio. Recusar é melhor que aceitar e estragar o áudio adiante.
+    if len(corpo) % 2:
+        raise HTTPException(
+            status_code=422, detail="tamanho ímpar: amostra de 16 bit incompleta"
+        )
+
+    repasse.publicar_audio(s.sessao_id, corpo)
+
+
+@router_stream.get("/midia/chamada/{sessao_id}/audio")
+def stream_audio_chamada(request: Request, sessao_id: str) -> StreamingResponse:
+    """A voz do operador, para o totem (MEL-007).
+
+    Mesmo transporte do microfone da Pi: `audio/wav` por chunks, tocável num
+    `<audio src="…">`. O cabeçalho vai com tamanho desconhecido
+    (`0xFFFFFFFF`) — a convenção para fluxo ao vivo — e é **o mesmo
+    `cabecalho_wav` do `microfone.py`**, já validado na Pi pelo `file` do
+    sistema.
+
+    Tocar não exige contexto seguro; só capturar exige. Por isso o totem não
+    precisa de nada novo.
+    """
+    s = _validar_chamada(sessao_id)
+
+    return StreamingResponse(
+        _wav_chamada(request, s),
+        media_type="audio/wav",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def _wav_chamada(
+    request: Request, s: sessoes.Sessao
+) -> AsyncIterator[bytes]:
+    """Cabeçalho WAV, depois o PCM que a central publica.
+
+    Sem threadpool, ao contrário do áudio da Pi: aqui não há captura bloqueante
+    a tirar do event loop — só uma espera em `asyncio.Event`.
+    """
+    yield microfone.cabecalho_wav()
+    while True:
+        if await request.is_disconnected():
+            return
+        if s.expirada:
+            logger.info("áudio da chamada encerrado por expiração: %s", s.sessao_id)
+            return
+        try:
+            yield await repasse.aguardar_audio(s.sessao_id)
+        except SemAudio:
+            # A central parou de enviar. Encerrar é melhor que manter a conexão
+            # aberta contra quem já foi embora — e **silêncio falso é pior que
+            # fim de áudio**: o totem para de tocar, o que é percebível.
+            logger.info("chamada sem áudio: %s", s.sessao_id)
             return
 
 

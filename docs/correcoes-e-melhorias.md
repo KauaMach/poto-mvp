@@ -28,7 +28,7 @@ poderia fazer mais ou melhor)
 | [MEL-004](#mel-004--backend-da-videochamada-sessão-recepção-de-quadros-e-relay) | Backend da videochamada: sessão, recepção de quadros e relay | Melhoria | Alta | ✅ **Implementado** (18/09) |
 | [MEL-005](#mel-005--painel-botão-iniciar-videochamada-e-captura-da-webcam) | Painel: botão "Iniciar videochamada" e captura da webcam | Melhoria | Alta | ✅ **Implementado** (18/09) |
 | [MEL-006](#mel-006--totem-o-operador-aparece-na-tela-de-alerta-ativo) | Totem: o operador aparece na tela de alerta ativo | Melhoria | Alta | ✅ **Implementado** (18/09) |
-| [MEL-007](#mel-007--áudio-da-central-para-o-totem) | Áudio da central para o totem | Melhoria | Média | Proposto |
+| [MEL-007](#mel-007--áudio-da-central-para-o-totem) | Áudio da central para o totem | Melhoria | Média | ✅ **Implementado** (18/09) |
 | [MEL-008](#mel-008--sub-ação-descrever-por-voz-do-blueprint-de-design) | Sub-ação "Descrever por voz" do blueprint de design | Melhoria | Baixa | ✅ **Implementado** (18/09), sem função |
 
 ---
@@ -698,9 +698,72 @@ Rosto sem voz é comunicação pela metade. O áudio do operador segue o mesmo c
 vídeo: captura na central, envio para a Pi, `<audio>` no totem. O áudio **da pessoa** já
 chega à central hoje (MVP-076).
 
-Fica separado do vídeo de propósito: o vídeo entrega o essencial do pedido ("ver alguém"),
-e áudio ao vivo em HTTP por quadros tem problemas próprios — sincronia, continuidade,
-buffer — que não devem atrasar o vídeo.
+**Status:** ✅ **Implementado em 18/09**, depois de o vídeo ser confirmado funcionando na
+Pi. O canal ficou completo: a pessoa vê **e ouve** o operador, e o operador já via e ouvia
+ela (MVP-076/078).
+
+### A decisão que define o desenho: áudio é fila, vídeo é só o último
+
+Não é estilo, é natureza do sinal. Um quadro de vídeo antigo **não vale nada** — quem
+assiste quer a imagem de agora, e guardar os anteriores só somaria atraso. Já em áudio,
+descartar um pedaço é um **buraco audível** no meio de uma frase.
+
+Então o áudio acumula, em fila própria, com política própria. Mas com teto: uma fila que
+só cresce vira atraso crescente, e numa conversa atraso é pior que estalo. Cheia,
+**descarta o mais antigo** — a mesma decisão (e razão) do `microfone.py`. `FILA_AUDIO_MAX`
+= 50 pedaços ≈ 5 s.
+
+Verificado por mutação: dar ao áudio a política do vídeo (guardar só o último) quebra 3
+testes; tirar o teto quebra 1.
+
+### PCM cru, e não Opus
+
+O `MediaRecorder` daria WebM/Opus comprimido, que o totem só tocaria via MSE — mais
+código, mais API, mais coisa para falhar. Em PCM, a Pi monta **o mesmo WAV em streaming**
+que o microfone dela já serve desde a MVP-076 (mesmo `cabecalho_wav`, já validado na Pi
+pelo `file` do sistema), e o totem toca num `<audio>` sem uma linha de JavaScript.
+
+Numa rede local, 16 kHz mono são 32 KB/s. Não vale trocar simplicidade por compressão.
+
+### Uma permissão só
+
+`getUserMedia` é chamado **uma vez**, com vídeo e áudio: o navegador pede permissão uma
+vez e acende um indicador só. Duas chamadas mostrariam dois avisos para a mesma ação, e o
+segundo pareceria suspeito.
+
+Se o áudio falhar e o vídeo subir, a chamada **continua** com `comAudio: false` — e a tela
+da central diz "sem áudio". Meia conversa é melhor que nenhuma, desde que ninguém pense
+que está sendo ouvido quando não está.
+
+### `ScriptProcessorNode`, apesar de deprecado
+
+A alternativa correta é o `AudioWorklet`, que roda fora da thread principal — mas exige
+carregar um módulo por URL, o que significa **outro arquivo em `public/` sem hash no
+nome**. Acabei de aprender o preço disso: a fonte nova não alcançou quem tinha cache, e o
+botão mostrou a palavra "mic". Para um fluxo mono de 16 kHz numa máquina só, o custo de
+thread é desprezível. É troca consciente, e o caminho de upgrade está nomeado no código.
+
+### Dois detalhes que falhariam em silêncio
+
+- **Taxa de amostragem.** `new AudioContext({ sampleRate: 16000 })` é obrigatório: sem
+  isso o contexto abre na taxa do sistema (tipicamente 48 kHz) e o PCM sairia 3× mais
+  rápido do que o cabeçalho WAV declara — a voz ficaria aguda e acelerada.
+- **Corte antes de converter.** O Web Audio pode entregar valores levemente fora de
+  −1..1, e sem `Math.max/min` eles dão a volta no inteiro de 16 bit. O sintoma é um estalo
+  alto justamente nos picos da voz.
+- **Tamanho ímpar é recusado com 422.** Um byte sobrando é meia amostra de 16 bit, e
+  concatenar isso desalinha todo o fluxo adiante — chiado, não silêncio. E chiado parece
+  defeito de microfone, não erro de protocolo.
+
+### A política de autoplay, que é onde isso falharia sem aviso
+
+O navegador pode **bloquear reprodução com som** sem interação do usuário. Aqui houve —
+a pessoa acabou de segurar o pânico por 1 s — mas a heurística não é garantida. Se o
+`play()` for recusado, a tela do totem acende **"Toque para ouvir o atendente"** e a
+legenda do vídeo muda para "Atendente na linha — sem som".
+
+Falhar em silêncio seria o pior resultado: ela veria o rosto e não ouviria a voz, sem
+saber por quê — e concluiria que ninguém responde.
 
 ---
 

@@ -500,3 +500,150 @@ def test_o_evento_da_chamada_nao_vaza_para_outro_chamado(cliente):
         evento = ws.receive_json()
 
     assert evento["evento"] == "atualizado"
+
+
+# ---------------------------------------------------------------------------
+# Áudio da central para o totem — MEL-007
+# ---------------------------------------------------------------------------
+#
+# A política de descarte é **oposta** à do vídeo, e é o que estes testes
+# cobram: vídeo guarda só o último quadro (o antigo não vale nada); áudio
+# enfileira, porque descartar um pedaço é um buraco audível no meio de uma
+# frase. Mas a fila tem teto — uma fila que só cresce vira atraso crescente, e
+# numa conversa atraso é pior que estalo.
+
+
+PCM = b"\x00\x01" * 800  # 1600 bytes = 800 amostras de 16 bit
+
+
+def test_publicar_audio_enfileira(cliente):
+    cid = em_panico(cliente)
+    sid = cliente.post(f"/api/v1/chamados/{cid}/chamada").json()["sessao_id"]
+
+    r = cliente.post(f"/api/v1/midia/chamada/{sid}/audio", content=PCM)
+
+    assert r.status_code == 204
+    assert repasse.pedacos_de_audio(sid) == 1
+
+
+def test_audio_acumula_em_vez_de_substituir(cliente):
+    """**A diferença central em relação ao vídeo.**
+
+    Se o áudio se comportasse como o vídeo — guardando só o último — cada
+    pedaço novo apagaria o anterior, e o que chegaria ao totem seriam trechos
+    picados de 128 ms com buracos entre eles.
+    """
+    cid = em_panico(cliente)
+    sid = cliente.post(f"/api/v1/chamados/{cid}/chamada").json()["sessao_id"]
+
+    for _ in range(3):
+        cliente.post(f"/api/v1/midia/chamada/{sid}/audio", content=PCM)
+
+    assert repasse.pedacos_de_audio(sid) == 3
+
+
+def test_fila_de_audio_tem_teto(cliente):
+    """Uma fila sem teto vira atraso crescente: o operador fala e a pessoa ouve
+    com cinco, dez, trinta segundos de defasagem."""
+    from app.midia.chamada import FILA_AUDIO_MAX
+
+    cid = em_panico(cliente)
+    sid = cliente.post(f"/api/v1/chamados/{cid}/chamada").json()["sessao_id"]
+
+    for _ in range(FILA_AUDIO_MAX + 20):
+        cliente.post(f"/api/v1/midia/chamada/{sid}/audio", content=PCM)
+
+    assert repasse.pedacos_de_audio(sid) == FILA_AUDIO_MAX
+
+
+def test_tamanho_impar_e_recusado(cliente):
+    """Amostra de 16 bit: um byte sobrando significa meia amostra, e concatenar
+    isso **desalinha todo o fluxo adiante**. O sintoma é chiado, não silêncio —
+    e chiado parece defeito de microfone, não erro de protocolo."""
+    cid = em_panico(cliente)
+    sid = cliente.post(f"/api/v1/chamados/{cid}/chamada").json()["sessao_id"]
+
+    r = cliente.post(f"/api/v1/midia/chamada/{sid}/audio", content=b"\x00\x01\x02")
+
+    assert r.status_code == 422
+    assert repasse.pedacos_de_audio(sid) == 0, "guardou apesar de recusar"
+
+
+def test_audio_sem_sessao_e_403(cliente):
+    assert (
+        cliente.post("/api/v1/midia/chamada/inventada/audio", content=PCM).status_code
+        == 403
+    )
+
+
+def test_stream_de_audio_sem_sessao_e_403(cliente):
+    assert cliente.get("/api/v1/midia/chamada/inventada/audio").status_code == 403
+
+
+def test_abrir_devolve_a_url_de_audio(cliente):
+    cid = em_panico(cliente)
+    corpo = cliente.post(f"/api/v1/chamados/{cid}/chamada").json()
+
+    assert corpo["audio_url"].endswith("/audio")
+    assert corpo["sessao_id"] in corpo["audio_url"]
+
+
+def test_totem_recebe_as_duas_urls(cliente):
+    """O totem descobre vídeo **e** áudio pelo mesmo evento — são as duas
+    pontas do canal, e chegar só uma deixaria a chamada pela metade."""
+    cid = em_panico(cliente)
+
+    with cliente.websocket_connect(f"/api/v1/ws/chamado/{cid}") as ws:
+        ws.receive_json()
+        corpo = cliente.post(f"/api/v1/chamados/{cid}/chamada").json()
+        evento = ws.receive_json()
+
+    assert evento["dados"]["stream_url"] == corpo["stream_url"]
+    assert evento["dados"]["audio_url"] == corpo["audio_url"]
+
+
+async def test_aguardar_audio_junta_a_fila():
+    """Junta em vez de entregar um pedaço por vez: se o consumidor ficou para
+    trás, uma escrita só o recoloca em dia. Em áudio isso é correto — os
+    pedaços são contíguos, então concatenar **é** o sinal."""
+    for _ in range(3):
+        repasse.publicar_audio("s1", PCM)
+
+    trecho = await repasse.aguardar_audio("s1", prazo=1.0)
+
+    assert trecho == PCM * 3
+    assert repasse.pedacos_de_audio("s1") == 0, "não limpou a fila"
+
+
+async def test_aguardar_audio_sem_publicacao_levanta():
+    from app.midia.chamada import SemAudio
+
+    with pytest.raises(SemAudio):
+        await repasse.aguardar_audio("nunca", prazo=0.05)
+
+
+async def test_encerrar_descarta_o_audio():
+    repasse.publicar_audio("s1", PCM)
+    repasse.encerrar("s1")
+    assert repasse.pedacos_de_audio("s1") == 0
+
+
+async def test_stream_de_audio_comeca_pelo_cabecalho_wav(cliente):
+    """O player precisa da taxa e do número de canais **antes** da primeira
+    amostra — e é o mesmo cabeçalho que o microfone da Pi usa desde a MVP-076,
+    já validado lá pelo `file` do sistema."""
+    from app.api import midia as api
+    from app.midia import microfone
+
+    cid = em_panico(cliente)
+    sid = cliente.post(f"/api/v1/chamados/{cid}/chamada").json()["sessao_id"]
+    s = sessoes._sessoes[sid]
+    repasse.publicar_audio(sid, PCM)
+
+    gerador = api._wav_chamada(RequisicaoFalsa(desconecta_em=1), s)
+    primeiro = await anext(gerador)
+    segundo = await anext(gerador)
+    await gerador.aclose()
+
+    assert primeiro == microfone.cabecalho_wav()
+    assert segundo == PCM

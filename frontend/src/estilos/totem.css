@@ -457,3 +457,29 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+
+/* O `<audio>` da chamada não tem interface (MEL-007): quem está em pânico não
+ * deve precisar operar um player. Fica no DOM só para tocar. */
+.poto-alerta-audio {
+  display: none;
+}
+
+/* Só aparece se o navegador recusar o autoplay. Sem este botão, o silêncio
+ * seria indistinguível de "o operador não está falando" — e a pessoa acharia
+ * que ninguém responde. */
+.poto-alerta-ouvir {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-height: 56px;
+  padding: 0 var(--space-lg);
+  margin: var(--space-md) auto 0;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--rust);
+  color: #fff;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 600;
+}

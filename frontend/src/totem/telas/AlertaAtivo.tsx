@@ -15,7 +15,7 @@
  * não tem como saber se o pedido chegou, e a única coisa que resta a fazer é
  * tocar de novo.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { escalonarChamado } from "../../comum/api";
 import type { CanalOpcao, EventoWS, PanicoOut, StatusChamado } from "../../comum/tipos";
 import { useCronometro } from "../../comum/useCronometro";
@@ -39,6 +39,14 @@ export function AlertaAtivo({ alerta, desde, offline = false, onVoltar }: Props)
    * Chega pelo WebSocket com escopo da COR-002, então só este chamado a
    * recebe. */
   const [videoDaCentral, setVideoDaCentral] = useState<string | null>(null);
+  const [audioDaCentral, setAudioDaCentral] = useState<string | null>(null);
+  /* O navegador pode **bloquear a reprodução com som** se julgar que não houve
+   * interação do usuário. Aqui houve — a pessoa acabou de segurar o pânico por
+   * 1 s — mas a heurística não é garantida, e falhar em silêncio seria o pior
+   * resultado: ela veria o rosto do operador e não ouviria a voz, sem saber por
+   * quê. Se o `play()` for recusado, a tela oferece um toque. */
+  const [precisaTocar, setPrecisaTocar] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [acionados, setAcionados] = useState<Record<string, boolean>>({});
   const tempo = useCronometro(desde);
 
@@ -59,10 +67,13 @@ export function AlertaAtivo({ alerta, desde, offline = false, onVoltar }: Props)
        * que alguém ainda está ali — o oposto de informar. */
       if (evento.evento === "chamada_iniciada") {
         setVideoDaCentral(evento.dados.stream_url);
+        setAudioDaCentral(evento.dados.audio_url);
         return;
       }
       if (evento.evento === "chamada_encerrada") {
         setVideoDaCentral(null);
+        setAudioDaCentral(null);
+        setPrecisaTocar(false);
         return;
       }
 
@@ -144,9 +155,49 @@ export function AlertaAtivo({ alerta, desde, offline = false, onVoltar }: Props)
           />
           <figcaption>
             <span aria-hidden="true" className="poto-ponto poto-ponto-vivo" />
-            Atendente na linha
+            {precisaTocar ? "Atendente na linha — sem som" : "Atendente na linha"}
           </figcaption>
         </figure>
+      )}
+
+      {/* A voz do operador (MEL-007).
+        *
+        * Sem `controls`: quem está em pânico não deve precisar operar um player.
+        * O elemento é invisível (`poto-alerta-audio`) e só existe para tocar.
+        *
+        * `onCanPlay` tenta iniciar e **captura a recusa**: se o navegador
+        * bloquear o autoplay, `precisaTocar` acende um botão. Sem isso o
+        * silêncio seria indistinguível de "o operador não está falando". */}
+      {audioDaCentral && (
+        <audio
+          ref={audioRef}
+          className="poto-alerta-audio"
+          src={audioDaCentral}
+          autoPlay
+          onCanPlay={() => {
+            void audioRef.current
+              ?.play()
+              .then(() => setPrecisaTocar(false))
+              .catch(() => setPrecisaTocar(true));
+          }}
+          onError={() => setAudioDaCentral(null)}
+        />
+      )}
+
+      {precisaTocar && (
+        <button
+          type="button"
+          className="poto-alerta-ouvir"
+          onClick={() => {
+            void audioRef.current
+              ?.play()
+              .then(() => setPrecisaTocar(false))
+              .catch(() => {});
+          }}
+        >
+          <Sym nome="mic" tamanho="sm" cor="#fff" />
+          Toque para ouvir o atendente
+        </button>
       )}
 
       <div className="poto-alerta-escalonar">

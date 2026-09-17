@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,21 @@ logger = logging.getLogger(__name__)
 # Pi entrega 17 KB a 640×480, medido na MVP-079) e baixo o bastante para que um
 # cliente em laço não derrube a Pi antes de alguém notar.
 TAMANHO_MAXIMO = 512 * 1024
+
+# Teto da fila de áudio, em pedaços.
+#
+# **Áudio é fila; vídeo é só o último.** A diferença não é estilo, é natureza do
+# sinal: um quadro de vídeo antigo não vale nada — quem assiste quer a imagem de
+# agora, e guardar os anteriores só somaria atraso. Já em áudio, descartar um
+# pedaço é um **buraco audível** no meio de uma frase.
+#
+# Então o áudio acumula. Mas não sem limite: uma fila que só cresce vira atraso
+# crescente, e numa conversa atraso é pior que um estalo. Cheia, **descarta o
+# mais antigo** — a mesma decisão (e a mesma razão) do `microfone.py`.
+#
+# 50 pedaços de ~100 ms = ~5 s de áudio. É folgado para uma oscilação de rede
+# local e curto o bastante para o atraso não virar eco.
+FILA_AUDIO_MAX = 50
 
 # Prazo de espera por um quadro novo, em segundos.
 #
@@ -58,12 +74,20 @@ class SemQuadro(RuntimeError):
     """A central não publicou quadro nenhum dentro do prazo."""
 
 
+class SemAudio(RuntimeError):
+    """A central não publicou áudio nenhum dentro do prazo."""
+
+
 class _Repasse:
     """O quadro mais recente de cada sessão, e o aviso de que chegou um novo."""
 
     def __init__(self) -> None:
         self._atual: dict[str, bytes] = {}
         self._novidade: dict[str, asyncio.Event] = {}
+        # Áudio tem armazenamento próprio porque tem política própria: fila,
+        # não "só o último". Ver `FILA_AUDIO_MAX`.
+        self._audio: dict[str, deque[bytes]] = {}
+        self._audio_novo: dict[str, asyncio.Event] = {}
 
     def publicar(self, sessao_id: str, jpeg: bytes) -> None:
         """Guarda o quadro e acorda quem estiver esperando.
@@ -108,15 +132,68 @@ class _Repasse:
         return self._atual.get(sessao_id)
 
     def encerrar(self, sessao_id: str) -> None:
-        """Descarta o quadro e acorda quem espera, para o gerador poder sair."""
+        """Descarta quadro e áudio, e acorda quem espera, para os geradores
+        poderem sair. Sem isto, os dois ficariam pendurados até o prazo."""
         self._atual.pop(sessao_id, None)
-        evento = self._novidade.pop(sessao_id, None)
-        if evento is not None:
-            evento.set()
+        self._audio.pop(sessao_id, None)
+        for mapa in (self._novidade, self._audio_novo):
+            evento = mapa.pop(sessao_id, None)
+            if evento is not None:
+                evento.set()
 
     def sessoes(self) -> int:
         """Quantas sessões têm quadro guardado. Usado em teste e diagnóstico."""
         return len(self._atual)
+
+    # --- áudio ------------------------------------------------------------
+    #
+    # Separado do vídeo de propósito, e não por organização: as duas mídias
+    # têm política oposta de descarte (ver `FILA_AUDIO_MAX`). Um armazenamento
+    # só, com uma política só, estragaria uma das duas.
+
+    def publicar_audio(self, sessao_id: str, pcm: bytes) -> None:
+        """Enfileira um pedaço de PCM e acorda quem estiver esperando."""
+        fila = self._audio.setdefault(sessao_id, deque())
+        fila.append(pcm)
+        # Descarta o **mais antigo** quando cheia: numa conversa ao vivo, o
+        # pedaço velho não vale nada e manter a fila cheia só somaria atraso.
+        while len(fila) > FILA_AUDIO_MAX:
+            fila.popleft()
+
+        anterior = self._audio_novo.pop(sessao_id, None)
+        self._audio_novo[sessao_id] = asyncio.Event()
+        if anterior is not None:
+            anterior.set()
+
+    async def aguardar_audio(
+        self, sessao_id: str, prazo: float = ESPERA_QUADRO
+    ) -> bytes:
+        """O próximo trecho de PCM, juntando o que houver na fila.
+
+        Junta em vez de devolver um pedaço por vez: se o consumidor ficou para
+        trás, entregar tudo de uma vez o recoloca em dia numa escrita só. Em
+        áudio isso é correto — os pedaços são contíguos, então concatenar
+        **é** o sinal.
+        """
+        fila = self._audio.setdefault(sessao_id, deque())
+        if not fila:
+            evento = self._audio_novo.setdefault(sessao_id, asyncio.Event())
+            try:
+                await asyncio.wait_for(evento.wait(), prazo)
+            except TimeoutError as erro:
+                raise SemAudio(
+                    f"nenhum áudio em {prazo:g}s — a central parou de enviar"
+                ) from erro
+        if not fila:
+            raise SemAudio("fila de áudio vazia depois do aviso")
+
+        trecho = b"".join(fila)
+        fila.clear()
+        return trecho
+
+    def pedacos_de_audio(self, sessao_id: str) -> int:
+        """Quantos pedaços estão na fila. Usado em teste e diagnóstico."""
+        return len(self._audio.get(sessao_id, ()))
 
 
 repasse = _Repasse()
