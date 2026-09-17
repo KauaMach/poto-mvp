@@ -72,8 +72,25 @@ async def autorizar_websocket(websocket: WebSocket) -> bool:
 
     Não é uma dependência do FastAPI porque `HTTPException` não tem como ser
     traduzida num handshake de WebSocket — o cliente receberia um erro sem
-    explicação. Aqui o handshake é **recusado** com 1008 (violação de política),
-    que é o código que o navegador entrega ao `onclose` e o painel pode exibir.
+    explicação. Aqui o handshake é **recusado** antes do `accept()`.
+
+    **Correção de uma afirmação anterior deste docstring.** Ele dizia que o
+    navegador recebe o 1008 no `onclose` "e o painel pode exibir". Medido contra
+    a Pi: não recebe. Fechar antes de aceitar faz o servidor ASGI rejeitar o
+    handshake HTTP, e o cliente observa **403** — o código 1008 nunca chega, e
+    num navegador o `onclose` traz 1006 (fechamento anormal), indistinguível de
+    servidor fora do ar.
+
+    O código continua certo e o docstring é que estava errado: aceitar uma
+    conexão não autorizada, mesmo por um instante, é pior que recusar o
+    handshake. O 1008 fica como intenção registrada no protocolo, para quem
+    inspecionar o tráfego — não como sinal para o cliente.
+
+    Consequência prática, para quem for mexer no painel depois: **não dá para
+    distinguir "sem credencial" de "servidor caiu" pelo código de fechamento.**
+    Hoje isso não importa, porque o `useEventosWS` ignora o código e só
+    reconecta; se um dia importar, a distinção tem que vir de outro lugar — por
+    exemplo um `GET /chamados` que devolve 401 antes de abrir o socket.
 
     O navegador não deixa definir cabeçalhos num `new WebSocket()`, então o
     token também é aceito por query string. A troca é consciente: query string
