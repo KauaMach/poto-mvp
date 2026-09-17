@@ -18,6 +18,7 @@ import { useCallback, useState } from "react";
 import { ackChamado, atualizarChamado } from "../comum/api";
 import type { Chamado, Dispositivo, StatusChamado } from "../comum/tipos";
 import { Sym } from "../componentes/Sym";
+import { ChamadaChamado } from "./ChamadaChamado";
 import { ContadorSLA } from "./ContadorSLA";
 import { MidiaChamado } from "./MidiaChamado";
 import {
@@ -157,6 +158,20 @@ export function CardChamado({
         * condição é uma só, e não duas que podem divergir. */}
       {aberto && (
         <MidiaChamado chamado={chamado} dispositivos={dispositivos} />
+      )}
+
+      {/* Videochamada só em **pânico** ativo (MEL-005).
+        *
+        * A condição não é preferência: `alerta_ativo` é o único estado com tela
+        * persistente no totem. As outras trilhas mostram a confirmação por 9 s
+        * e voltam para a Home — não há onde o vídeo aparecer. Oferecer o botão
+        * ali abriria uma chamada para uma tela que já saiu.
+        *
+        * `origem_acionamento` e não `status`: o pânico pode estar em
+        * `reconhecido` ou `em_atendimento` e a tela de alerta continua aberta,
+        * porque ela só fecha por ação de quem está no totem. */}
+      {aberto && chamado.origem_acionamento === "panico" && (
+        <ChamadaChamado chamado={chamado} />
       )}
 
       <footer className="poto-card-rodape">

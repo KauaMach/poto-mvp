@@ -533,3 +533,36 @@
     animation: none;
   }
 }
+
+/* --- Videochamada (MEL-005) ------------------------------------------------ */
+
+.poto-chamada {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--line);
+}
+
+.poto-chamada-ativa {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+/* Nota explicativa, e ela é necessária em dois momentos: quando a captura está
+ * bloqueada (diz o que fazer) e quando está transmitindo (diz o que a outra
+ * pessoa está vendo). Um operador que não sabe que a própria câmera está no ar
+ * é um problema de privacidade, não de interface. */
+.poto-chamada-nota {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--muted);
+  margin: var(--space-xs) 0 0;
+}
+
+.poto-chamada-ativa .poto-chamada-nota {
+  margin: 0;
+  flex: 1 1 auto;
+}

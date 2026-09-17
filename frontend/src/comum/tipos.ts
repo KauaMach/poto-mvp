@@ -153,3 +153,15 @@ export type MidiaSessao = {
   dispositivo_id: string;
   tipo: TipoDispositivo;
 };
+
+/** Videochamada autorizada da central para o totem (MEL-004).
+ *
+ * Duas URLs porque são dois papéis: a central **envia** quadros por
+ * `envio_url`, o totem **consome** de `stream_url`. Vêm montadas pelo backend.
+ */
+export type ChamadaSessao = {
+  sessao_id: string;
+  envio_url: string;
+  stream_url: string;
+  expira_em: number;
+};

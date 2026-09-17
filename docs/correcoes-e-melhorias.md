@@ -26,7 +26,7 @@ poderia fazer mais ou melhor)
 | [MEL-003](#mel-003--rota-explícita-totem-em-vez-de-a-raiz-ser-o-totem-por-padrão) | Rota explícita `/totem`, em vez de a raiz ser o totem por padrão | Melhoria | Média | ✅ **Implementado** (18/09) |
 | [COR-002](#cor-002--o-totem-recebe-o-relato-de-todos-os-chamados-pelo-websocket) | O totem recebe o relato de **todos** os chamados pelo WebSocket | Correção | **Alta** | ✅ **Implementado** (18/09) |
 | [MEL-004](#mel-004--backend-da-videochamada-sessão-recepção-de-quadros-e-relay) | Backend da videochamada: sessão, recepção de quadros e relay | Melhoria | Alta | ✅ **Implementado** (18/09) |
-| [MEL-005](#mel-005--painel-botão-iniciar-videochamada-e-captura-da-webcam) | Painel: botão "Iniciar videochamada" e captura da webcam | Melhoria | Alta | Proposto |
+| [MEL-005](#mel-005--painel-botão-iniciar-videochamada-e-captura-da-webcam) | Painel: botão "Iniciar videochamada" e captura da webcam | Melhoria | Alta | ✅ **Implementado** (18/09) |
 | [MEL-006](#mel-006--totem-o-operador-aparece-na-tela-de-alerta-ativo) | Totem: o operador aparece na tela de alerta ativo | Melhoria | Alta | Proposto |
 | [MEL-007](#mel-007--áudio-da-central-para-o-totem) | Áudio da central para o totem | Melhoria | Média | Proposto |
 
@@ -597,6 +597,34 @@ se a flag não for aceitável na máquina da central.
 verificados sem navegador e sem câmera**. O que dá para verificar é a lógica ao redor
 (montagem da URL, ciclo de captura, encerramento) e o backend inteiro. A prova real é
 abrir na máquina da central.
+
+### Como ficou
+
+- **`transmissao.ts` (novo)** — `indisponivel()` distingue contexto inseguro de falta de
+  suporte, porque a saída é diferente: o primeiro se resolve com a flag na máquina da
+  central, o segundo não. `transmitir()` captura em 320×240 a 10 fps, qualidade 0,6 — é um
+  rosto numa tela de 8,7", não inspeção de imagem — e **para as faixas do
+  `MediaStreamTrack` ao encerrar**, que é o que apaga a luz da webcam. Mesma lição da
+  MVP-075, com agravante: aqui é a câmera *pessoal* de quem atende.
+- **`ChamadaChamado.tsx` (novo)** — botão, estado "TRANSMITINDO" com aviso explícito de que
+  a câmera está no ar, e encerramento em três caminhos (botão, saída da tela, `pagehide`
+  com `keepalive`).
+- **Só em pânico ativo**, e a condição é estrutural: `alerta_ativo` é o único estado com
+  tela persistente no totem. As outras trilhas mostram a confirmação por 9 s e voltam para
+  a Home — não há onde o vídeo aparecer. Widenar exigiria uma tela nova no totem, não um
+  `if` diferente.
+- **Se a sessão abre e a câmera não**, a sessão é fechada: deixá-la aberta registraria na
+  auditoria uma chamada que nunca transmitiu nada.
+
+### Um bug que a verificação encontrou
+
+`indisponivel()` lia `window.isSecureContext` direto, **no caminho de render**. O
+`verificar-midia.mjs` renderiza os componentes no Node e estourou com
+`ReferenceError: window is not defined`. Não era só problema de teste: uma função que toca
+global do navegador durante o render é frágil por natureza. Passou a tratar a ausência.
+
+O script ganhou 2 casos (pânico ativo oferece a chamada; pânico encerrado não oferece nada)
+e um negativo no caso existente — chamado `touch` **não** oferece videochamada.
 
 ---
 

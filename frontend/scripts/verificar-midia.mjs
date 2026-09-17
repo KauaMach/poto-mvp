@@ -62,7 +62,31 @@ const CASOS = [
     status: "notificado",
     dispositivos: [CAMERA],
     exige: ["Ver câmera", "Escolher dispositivo"],
-    proibe: ["Nenhuma câmera ou microfone"],
+    /* "Iniciar videochamada" **não** aparece: este chamado é `touch`, não
+     * pânico. Só o pânico tem tela persistente no totem onde o vídeo caiba
+     * (MEL-005). */
+    proibe: ["Nenhuma câmera ou microfone", "Iniciar videochamada"],
+  },
+  {
+    /* O par positivo: pânico ativo oferece a videochamada. Sem este caso, a
+     * proibição acima passaria mesmo se o botão nunca aparecesse em lugar
+     * nenhum. */
+    nome: "PÂNICO ativo",
+    status: "alerta_ativo",
+    origem: "panico",
+    dispositivos: [CAMERA],
+    exige: ["Iniciar videochamada", "Ver câmera"],
+    proibe: [],
+  },
+  {
+    /* Pânico encerrado: nada de mídia, nada de chamada. Um atendimento
+     * concluído não justifica nem olhar o corredor nem abrir vídeo na tela. */
+    nome: "pânico ENCERRADO",
+    status: "encerrado",
+    origem: "panico",
+    dispositivos: [CAMERA],
+    exige: [],
+    proibe: ["Iniciar videochamada", "Ver câmera", "poto-chamada", "poto-midia"],
   },
   {
     /* O caso central. `encerrado` está fora do conjunto `ABERTOS`, e nada de
@@ -116,7 +140,14 @@ mkdirSync(dir, { recursive: true });
 let falhas = 0;
 try {
   for (const caso of CASOS) {
-    const html = renderizar({ ...CHAMADO, status: caso.status }, caso.dispositivos);
+    const html = renderizar(
+      {
+        ...CHAMADO,
+        status: caso.status,
+        origem_acionamento: caso.origem ?? CHAMADO.origem_acionamento,
+      },
+      caso.dispositivos,
+    );
 
     const faltando = caso.exige.filter((t) => !html.includes(t));
     const vazados = caso.proibe.filter((t) => html.includes(t));

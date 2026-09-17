@@ -12,6 +12,7 @@
  */
 import type {
   Chamado,
+  ChamadaSessao,
   ConfigPublica,
   Dispositivo,
   EventoIn,
@@ -276,4 +277,39 @@ export function fecharMidiaAoSair(chamadoId: string): void {
   }).catch(() => {
     /* A página está indo embora; não há a quem reportar. */
   });
+}
+
+/* --- Videochamada (MEL-005) ----------------------------------------------- */
+
+export function abrirChamada(chamadoId: string): Promise<ChamadaSessao> {
+  return requisitar<ChamadaSessao>(
+    `/chamados/${encodeURIComponent(chamadoId)}/chamada`,
+    { method: "POST" },
+  );
+}
+
+/** Encerra a chamada. Devolve `204` sem corpo, então não passa pelo
+ * `requisitar` — ele decodifica JSON, e um 204 não tem o que decodificar. */
+export async function fecharChamada(
+  chamadoId: string,
+  sessaoId?: string,
+): Promise<void> {
+  const busca = sessaoId ? `?sessao=${encodeURIComponent(sessaoId)}` : "";
+  await fetch(
+    `${BASE}/chamados/${encodeURIComponent(chamadoId)}/chamada${busca}`,
+    { method: "DELETE" },
+  );
+}
+
+/** A mesma coisa, para quando a página está sendo descarregada.
+ *
+ * `keepalive` pelo mesmo motivo do `fecharMidiaAoSair`: um `fetch` comum
+ * disparado em `pagehide` é cancelado junto com a página, e a chamada ficaria
+ * aberta até expirar — com a webcam do operador ligada nesse tempo.
+ */
+export function fecharChamadaAoSair(chamadoId: string): void {
+  void fetch(`${BASE}/chamados/${encodeURIComponent(chamadoId)}/chamada`, {
+    method: "DELETE",
+    keepalive: true,
+  }).catch(() => {});
 }
