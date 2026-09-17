@@ -59,6 +59,7 @@ A primeira explica a fila offline e o roteamento determinístico. A segunda expl
 | [`docs/inferencia.md`](docs/inferencia.md) | Medições do classificador: por que não um LLM |
 | [`docs/conexao-ssh.md`](docs/conexao-ssh.md) | Como conectar na Raspberry Pi por SSH |
 | [`docs/roteiro-teste.md`](docs/roteiro-teste.md) | **Subir o backend e as duas interfaces**, rotas e roteiro de teste |
+| [`docs/correcoes-e-melhorias.md`](docs/correcoes-e-melhorias.md) | Backlog pós-MVP: correções e melhorias propostas |
 | [`docs/aceite-mvp.md`](docs/aceite-mvp.md) | Roteiro de resiliência, com os números medidos |
 | [`docs/setup-tablet.md`](docs/setup-tablet.md) | Travar o tablet no modo kiosk |
 
