@@ -593,8 +593,8 @@ A Pi **não compila** o frontend: o build é feito no notebook e enviado pronto.
 Isso poupa 133 MB e uma toolchain na Pi, e dispensa internet no deploy.
 
 ```bash
-make deploy PI_HOST=raspoto@10.13.60.159    # constrói e envia por rsync
-make build-id PI_HOST=raspoto@10.13.60.159  # a Pi está servindo o meu build?
+make deploy PI_HOST=raspoto@<ip-da-pi>     # constrói e envia por rsync
+make build-id PI_HOST=raspoto@<ip-da-pi>   # a Pi está servindo o meu build?
 ```
 
 O `build-id` responde a pergunta que trava uma demonstração: *"a correção está
@@ -618,7 +618,13 @@ systemd reerguer o serviço depois de um `kill -9`.
 
 ```
 http://RaspPoto.local:8000     (mDNS — preferido)
-http://10.13.60.159:8000       (IP — plano B)
+http://<ip-da-pi>:8000         (IP — plano B)
+```
+
+**Descubra o IP atual na própria Pi**, porque ele muda:
+
+```bash
+ssh raspoto@<ip-conhecido> 'hostname -I'
 ```
 
 **O `.local` só resolve de dentro da mesma rede da Pi.** mDNS é link-local por
@@ -629,6 +635,22 @@ segmento da Pi tem mDNS funcionando, com 26 vizinhos anunciando, e mesmo assim
 Consequência prática: **coloque o tablet na mesma rede da Pi.** Se ele cair em
 outro segmento, só a URL por IP funciona. Confira no local, com o tablet na mão
 — não na véspera.
+
+### E o IP muda — isto foi observado, não suposto
+
+A Pi pega endereço por DHCP. Entre 16 e 17/09 ela saiu de `10.13.60.159` para
+`10.13.60.129` **sozinha**, sem ninguém mexer em nada. Um dia de intervalo
+bastou.
+
+Isso significa que o "plano B" também expira: um atalho no tablet com o IP
+decorado aponta para nada depois de o roteador reiniciar. Antes da
+demonstração, faça **uma** das duas coisas:
+
+- **reserva no roteador** para o MAC da Pi (preferida — nada muda na Pi); ou
+- **IP estático na Pi**, com o comando que o `install-pi.sh` imprime já
+  preenchido com o CIDR e o gateway reais lidos da interface.
+
+O script imprime o MAC e o gateway no fim justamente para isso.
 
 ---
 

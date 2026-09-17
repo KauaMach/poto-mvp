@@ -3020,6 +3020,18 @@
 > no roteador, o plano B também expira. É o motivo de o script montar o comando do `nmcli`
 > com MAC e gateway reais já preenchidos.
 >
+> **Atualização de 17/09 — o IP mudou sozinho, e isso deixou de ser previsão.** A Pi
+> voltou como **`10.13.60.129`**, tendo sido `10.13.60.159` no dia anterior. Ninguém mexeu
+> em configuração de rede; foi o DHCP renovando com outro endereço. Um dia de intervalo
+> bastou.
+>
+> Consequência: a reserva no roteador (ou o estático) deixa de ser recomendação e passa a
+> ser **pré-requisito da demonstração**. Um atalho no tablet com o IP decorado aponta para
+> nada, e o `.local` só cobre quem está no mesmo segmento. As instruções em
+> `docs/roteiro-teste.md` foram trocadas de IP literal para `<ip-da-pi>`, com o comando
+> para descobrir o atual — um IP fixo no documento envelhece em silêncio, que é o pior
+> jeito de um documento errar.
+>
 > O plano B é **IP estável**, não "o IP atual". Um IP por DHCP muda quando o roteador
 > reinicia, e aí o atalho do tablet aponta para nada. O script monta os dois caminhos com
 > os valores reais lidos da máquina — reserva no roteador (preferida, porque não muda nada
