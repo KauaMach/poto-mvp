@@ -424,7 +424,8 @@ Abra `/painel` **numa segunda aba**, com o totem na primeira.
 | 6 | Filtrar **Já resolvidos** | Só encerrados e cancelados |
 | 7 | Buscar | Aceita protocolo, totem **ou** trecho do relato |
 | 8 | Reconhecer um chamado | Contador para; o cartão muda de situação |
-| 9 | Abrir o detalhe | Histórico de estados, notificações e a **triagem** |
+| 9 | Mudar estado → **Em atendimento** / **Encerrado** | Situação muda no cartão |
+| 10 | Abrir um chamado ativo | Seletor de **câmera e microfone** |
 
 ### O passo 3 e a cor
 
@@ -432,9 +433,19 @@ A cor **nunca** é o único sinal. Todo chip tem rótulo em texto — cerca de 8
 homens têm alguma deficiência na percepção de vermelho e verde, e um painel que
 informa só por cor não informa para eles.
 
-### O passo 9 e a auditoria
+### Não há tela de detalhe — e isso é uma lacuna, não uma decisão
 
-O detalhe mostra o que a máquina inferiu **e** qual trilha a pessoa tocou:
+**Correção a uma versão anterior deste roteiro, que mandava "abrir o
+detalhe".** Esse passo não existe: o painel consome `GET /chamados` (a lista) e
+nunca `GET /chamados/{id}`. Não há tela de histórico de estados, de
+notificações nem da triagem.
+
+O endpoint existe e responde completo — o que falta é a tela. Para ver o que a
+máquina inferiu, hoje é pela API:
+
+```bash
+curl -s localhost:8000/api/v1/chamados/CALL-2026-000001 | python3 -m json.tool
+```
 
 ```json
 "triagem": {
@@ -447,6 +458,16 @@ O detalhe mostra o que a máquina inferiu **e** qual trilha a pessoa tocou:
 É o que responde "por que este chamado foi para o CSV?" meses depois. A regra que
 governa isso: **nenhuma informação nova pode reduzir a proteção já concedida** —
 o texto livre pode agravar um chamado, nunca rebaixá-lo.
+
+### O escalonamento manual fica no TOTEM, não no painel
+
+Outra coisa que vale saber antes de procurar botão que não existe: `POST
+/chamados/{id}/escalonar` é chamado pela **tela de alerta ativo do totem**, onde
+quem acionou o pânico pode tocar PM 190, SAMU 192, Bombeiros 193 ou Central 180
+direto. O painel não tem esse comando.
+
+A escalação **automática** por estouro de SLA acontece no backend, sem tela
+nenhuma — é o worker da MVP-038.
 
 ---
 
