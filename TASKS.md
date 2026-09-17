@@ -2703,8 +2703,8 @@
 
 ### MVP-078 — Visualização no painel
 - **Descrição:** O operador escolhe o dispositivo e vê/ouve, dentro do chamado.
-- **Prioridade:** P0 · **Depende de:** 063, 075, 076 · **Status:** ⚠️ Parcial — escrita e
-  verificada por renderização; **a imagem na tela exige a Pi**
+- **Prioridade:** P0 · **Depende de:** 063, 075, 076 · **Status:** ⚠️ Parcial — todo o
+  caminho de dados validado na Pi; falta **alguém olhando um navegador**
 - **Arquivos:** `frontend/src/painel/MidiaChamado.tsx`,
   `frontend/src/painel/CardChamado.tsx`, `frontend/src/painel/ListaChamados.tsx`,
   `frontend/src/painel/Painel.tsx`, `frontend/src/comum/api.ts`,
@@ -2791,10 +2791,31 @@
 > painel quer que aconteça, que é reconhecer o chamado. Ligar a câmera é opcional, e um
 > botão da mesma cor competiria com ela.
 >
-> **O que o script não cobre, e é honesto dizer:** o indicador "AO VIVO", o contador
-> correndo e o `DELETE` ao sair dependem de uma sessão aberta, que exige `useEffect` e
-> `fetch` — nenhum dos dois roda em renderização de servidor. A imagem aparecendo de fato
-> e as duas linhas de auditoria ficam para a validação na Pi, junto com a MVP-079.
+> **O que o script não cobre:** o indicador "AO VIVO", o contador correndo e o `DELETE` ao
+> sair dependem de uma sessão aberta, que exige `useEffect` e `fetch` — nenhum dos dois roda
+> em renderização de servidor.
+>
+> **Validado na Pi em 17/09, o que não precisava de navegador:**
+>
+> - `/painel` responde **200** e o bundle que a Pi de fato serve contém
+>   `Ver câmera`, `Ouvir microfone`, `AO VIVO`, `Nenhuma câmera ou microfone`, `encerra em`
+>   e as regras `poto-midia` do CSS. A galeria **não** vazou para produção (0 ocorrências)
+> - `GET /dispositivos` devolve os dois dispositivos reais com `status: disponivel`
+> - o ciclo completo funciona pela rede: `POST` da sessão → `stream_url` pronta → bytes de
+>   vídeo e de áudio chegando → `DELETE`
+> - **a auditoria fecha o critério**: 16 linhas no chamado de teste, em **pares de abertura
+>   e fechamento**, com dispositivo, operador e duração, cobrindo os três caminhos de
+>   encerramento — pelo operador (`encerrada pelo operador`), pelo fechamento do detalhe
+>   (`detalhe do chamado fechado`, `dur=8s`) e por expiração. O campo `operador` grava
+>   `10.56.15.97 (sem token)`: o endereço de quem chamou e se havia credencial, sem inventar
+>   identidade que o sistema não tem
+>
+> **O que falta, e é só isto:** abrir `/painel` num navegador e **ver a imagem** e **ouvir o
+> som**. O caminho de dados está provado até os bytes chegarem ao cliente (MVP-079 mediu
+> 136 ms até o primeiro frame, e o áudio em taxa de tempo real); o que não foi exercitado é
+> o navegador decodificando MJPEG num `<img>` e WAV num `<audio>`. Isso exige uma pessoa,
+> um navegador e a Pi na mesma rede — e é o mesmo teste que fecha a linha de latência
+> filmada da MVP-079.
 
 ### MVP-079 — Custo de CPU e latência na Pi
 - **Descrição:** Provar que a mídia não compete com o núcleo. A Pi 5 **não tem encoder H.264 por hardware** — é por isso que o transporte é MJPEG.
