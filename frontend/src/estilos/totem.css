@@ -371,9 +371,20 @@
   border-radius: var(--r-pill);
   background: none;
   color: var(--muted);
-  font-family: var(--font-display);
-  font-size: 20px;
-  font-weight: 400;
+  /* **`--font-ui`, e não `--font-display`.** Errei isto na primeira versão: pus
+   * Michroma a 20px, e os rótulos das quatro trilhas são Michroma a **13px**
+   * (`Choice.tsx`). A sub-ação ficaria maior e mais larga que as opções
+   * principais — dominando a tela, que é o oposto do que a captura de
+   * referência mostra (`../poto/referencia/screen-totem-home.png`), onde ela é
+   * texto silencioso em cinza.
+   *
+   * A referência usa Space Grotesk como display; o MVP usa Michroma, que é bem
+   * mais larga. Copiar o tamanho sem olhar a família teria reproduzido o número
+   * e perdido a intenção. O que se preserva aqui é a **hierarquia**: a sub-ação
+   * é secundária, e no sistema de tipos do MVP isso é a fonte de interface. */
+  font-family: var(--font-ui);
+  font-size: 17px;
+  font-weight: 500;
 }
 
 .poto-voz-circulo {

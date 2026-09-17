@@ -1,4 +1,4 @@
-.DEFAULT_GOAL := help
+l.DEFAULT_GOAL := help
 SHELL := /bin/bash
 
 BACKEND       := backend
