@@ -2,17 +2,24 @@
  * Ponto de entrada da aplicação.
  *
  * Duas rotas, servidas do mesmo build pelo backend:
- *   /        → totem   (tela do Galaxy Tab A11)
+ *   /totem   → totem   (tela do Galaxy Tab A11)
  *   /painel  → central (notebook/desktop)
+ *
+ * A raiz (`/`) **redireciona** para `/totem`; o redirect vive no backend, em
+ * `app/main.py`. Antes da MEL-003 a raiz *era* o totem e `/totem` funcionava só
+ * por acidente do fallback — agora há uma URL canônica só.
  *
  * Mais `/galeria`, que só existe em desenvolvimento (MVP-047).
  *
  * Roteamento manual, sem react-router: são duas rotas estáticas e o kiosk
- * nunca navega entre elas. Uma dependência a mais não se pagaria aqui.
+ * nunca navega entre elas. Uma dependência a mais não se pagaria aqui. A
+ * decisão de qual rota é qual está em `rotas.ts`, separada para poder ser
+ * verificada sem navegador.
  */
 
 import { lazy, Suspense } from "react";
 import { Painel } from "./painel/Painel";
+import { rotaAtual } from "./rotas";
 import { Totem } from "./totem/Totem";
 
 /* Import dinâmico e guardado por `import.meta.env.DEV`, que é uma constante
@@ -24,21 +31,8 @@ const Galeria = import.meta.env.DEV
   ? lazy(() => import("./Galeria").then((m) => ({ default: m.Galeria })))
   : null;
 
-type Rota = "totem" | "painel" | "galeria";
-
-function rotaAtual(): Rota {
-  // Normaliza a barra final: /painel e /painel/ são a mesma rota.
-  const caminho = window.location.pathname.replace(/\/+$/, "");
-  if (caminho === "/painel") return "painel";
-  // `/galeria` só existe em desenvolvimento. `import.meta.env.DEV` é estático,
-  // então o bundler remove a rota **e o módulo da galeria** do build de
-  // produção — o totem não tem como chegar nela nem por URL digitada.
-  if (caminho === "/galeria" && import.meta.env.DEV) return "galeria";
-  return "totem";
-}
-
 export function App() {
-  const rota = rotaAtual();
+  const rota = rotaAtual(window.location.pathname, import.meta.env.DEV);
   if (rota === "painel") return <Painel />;
   if (rota === "galeria" && Galeria) {
     return (

@@ -23,7 +23,7 @@ poderia fazer mais ou melhor)
 | [COR-001](#cor-001--pânico-não-deveria-acionar-a-sala-lilás-automaticamente) | Pânico não deveria acionar a Sala Lilás automaticamente | Correção | Alta | ✅ **Implementado** (18/09) |
 | [MEL-001](#mel-001--canal-de-vídeo-bidirecional-da-central-para-o-totem) | Canal de vídeo bidirecional da central para o totem | Melhoria | A discutir | Proposto |
 | [MEL-002](#mel-002--pré-requisito-de-mel-001-servir-a-aplicação-por-https) | Pré-requisito de MEL-001: servir a aplicação por HTTPS | Melhoria | A discutir | Proposto |
-| [MEL-003](#mel-003--rota-explícita-totem-em-vez-de-a-raiz-ser-o-totem-por-padrão) | Rota explícita `/totem`, em vez de a raiz ser o totem por padrão | Melhoria | Média | Proposto |
+| [MEL-003](#mel-003--rota-explícita-totem-em-vez-de-a-raiz-ser-o-totem-por-padrão) | Rota explícita `/totem`, em vez de a raiz ser o totem por padrão | Melhoria | Média | ✅ **Implementado** (18/09) |
 
 ---
 
@@ -266,6 +266,8 @@ decisão separada antes de estimar o esforço de MEL-001 inteiro.
 ## MEL-003 — Rota explícita `/totem`, em vez de a raiz ser o totem por padrão
 
 **Tipo:** Melhoria · **Prioridade sugerida:** Média · **Levantado por:** Kaua, 18/09
+**Status:** ✅ **Implementado em 18/09, pela Opção A** (raiz redireciona). Ver
+"Como ficou", no fim desta entrada.
 
 ### Comportamento atual
 
@@ -321,6 +323,47 @@ sentido usar a raiz para outra coisa.
 | `docs/setup-tablet.md` | a URL do atalho fixado no tablet passa a ser `http://RaspPoto.local:8000/totem` (ou o IP equivalente) — hoje o documento aponta pra raiz |
 | `docs/roteiro-teste.md` | as referências a `` `/` `` como a rota do totem (tabela de telas, o passo "Abra `/`" do roteiro) passam a apontar para `/totem` |
 | `frontend/scripts/verificar-discreto.mjs` e `verificar-midia.mjs` | não usam rota nenhuma (renderizam componente direto via `react-dom/server`) — não são afetados |
+
+### Como ficou
+
+- **`frontend/src/rotas.ts` (novo)** — `rotaAtual(caminho, dev)` saiu do `App.tsx` para um
+  módulo próprio. Duas razões: um módulo que exporta componente **e** função perde o fast
+  refresh do Vite (mesmo motivo de `retorno.ts` e `statusAlerta.ts`), e receber o caminho
+  como **argumento** em vez de ler `window.location` por dentro a torna verificável sem
+  navegador.
+- **`/totem` é checado explicitamente**, no mesmo padrão de `/painel`. O fallback para o
+  totem **ficou**, e agora é deliberado: num aparelho de corredor, uma URL digitada errado
+  deve terminar na tela de pedir ajuda, não num 404.
+- **`GET /` devolve 307 para `/totem`**, no backend. Redirect no servidor e não
+  `location.replace` no cliente: não há piscada antes do JavaScript carregar, e funciona
+  mesmo que o bundle falhe. Registrado **antes** do `_montar_frontend`, porque o estático é
+  montado em `/` e casaria com a rota — no Starlette a ordem de registro é a ordem de
+  resolução.
+- **307 e não 301.** Um permanente fica gravado no navegador e em cada tablet, e voltar
+  atrás exigiria limpar o cache de aparelho por aparelho. As opções B e C acima continuam
+  abertas; um 301 as fecharia para economizar um salto de HTTP.
+- **`manifest.webmanifest`**: `start_url` passou a `/totem`. O `scope` **fica em `/`** de
+  propósito — ele precisa cobrir a raiz para que o redirect aconteça *dentro* do app
+  instalado, sem abrir o Chrome por sair do escopo.
+- **`docs/setup-tablet.md` e `docs/roteiro-teste.md`** atualizados. O documento do tablet
+  diz explicitamente que um aparelho já configurado na raiz **não precisa ser refeito**.
+
+### O teste que a MEL-003 exigiu, e por que ele olha o código-fonte
+
+`frontend/scripts/verificar-rotas.mjs` (novo, entra no `npm run lint`): 12 casos de
+caminho → rota, nos dois valores de `dev`.
+
+Só que há uma armadilha aqui, e vale registrar: **apagar a linha
+`if (limpo === CAMINHO_TOTEM)` não muda saída nenhuma** — o fallback devolve `"totem"` de
+qualquer jeito. Um teste que só compare entrada e saída passaria com a correção desfeita.
+O que distingue uma rota explícita de um fallback é o código, não o resultado. Então o
+script tem uma asserção sobre **a fonte** de `rotas.ts`, e diz isso abertamente em vez de
+fingir que a saída prova. Ele também confere que `CAMINHO_TOTEM` não divergiu do caminho
+para onde o backend redireciona.
+
+Verificado por mutação: apagar a checagem explícita quebra 1 verificação; divergir o
+`CAMINHO_TOTEM` quebra 1; remover o redirect quebra 3 testes de backend; trocar 307 por
+301 quebra 2.
 
 ### O que não muda
 

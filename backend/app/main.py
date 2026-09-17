@@ -19,7 +19,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.websockets import WebSocketClose
@@ -94,8 +94,42 @@ def criar_app() -> FastAPI:
     app.include_router(midia.router, prefix=API)
     app.include_router(midia.router_stream, prefix=API)
 
+    _rota_canonica_do_totem(app)
     _montar_frontend(app)
     return app
+
+
+# Caminho canônico do totem. A raiz redireciona para cá (MEL-003).
+CAMINHO_TOTEM = "/totem"
+
+
+def _rota_canonica_do_totem(app: FastAPI) -> None:
+    """Redireciona `/` para `/totem`.
+
+    Antes da MEL-003 a raiz **era** o totem, e `/painel` era a única rota
+    explícita — assimétrico. Pior: `/totem` já respondia com o totem, mas por
+    acidente, porque o `rotaAtual()` do frontend devolvia `"totem"` para
+    qualquer caminho não reconhecido. Havia duas URLs fazendo a mesma coisa e
+    nenhuma delas era canônica.
+
+    **Redirect no servidor, e não `location.replace` no cliente**, por dois
+    motivos: não há piscada de conteúdo antes do JavaScript carregar, e funciona
+    mesmo que o bundle falhe. O custo é um salto HTTP a mais, que só acontece
+    para quem chega pela raiz.
+
+    **Registrado antes do `_montar_frontend`** de propósito: o estático é
+    montado em `/` e casaria com esta rota. No Starlette a ordem de registro é
+    a ordem de resolução, então esta precisa vir primeiro.
+
+    307 e não 301: um permanente fica **gravado no navegador** e no tablet, e
+    voltar atrás exigiria limpar o cache de cada aparelho. Num MVP que pode
+    mudar de ideia sobre a raiz (ver as opções B e C da MEL-003), isso é caro
+    demais para economizar um salto.
+    """
+
+    @app.get("/", include_in_schema=False)
+    def raiz() -> RedirectResponse:
+        return RedirectResponse(CAMINHO_TOTEM, status_code=307)
 
 
 class _EstaticoSPA(StaticFiles):

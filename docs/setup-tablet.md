@@ -24,13 +24,23 @@ Se responder JSON, siga. Se não, use a URL de IP que o `install-pi.sh` imprimiu
 — wifi de universidade costuma bloquear multicast, e aí o `.local` não resolve
 (MVP-067b).
 
-**Anote qual das duas funcionou.** É a que vai no atalho.
+**Anote qual das duas funcionou.** É a base que vai no atalho — e o atalho
+aponta para **`/totem`**:
+
+```
+http://RaspPoto.local:8000/totem      (ou o IP equivalente)
+```
+
+> A raiz (`http://…:8000/`) também funciona: ela **redireciona** para `/totem`
+> (MEL-003). O atalho usa o caminho canônico para o aparelho não pagar um salto
+> de HTTP a cada abertura, mas um tablet já configurado na raiz continua
+> chegando na tela certa — não precisa refazer nada.
 
 ---
 
 ## 1. Instalar a aplicação na tela inicial
 
-1. Abra a URL que funcionou no **Chrome**.
+1. Abra a URL que funcionou, com `/totem` no fim, no **Chrome**.
 2. Menu **⋮** → **Adicionar à tela inicial**.
 3. Nome: `P.O.T.O`. Confirme.
 4. Feche o Chrome **por completo** (Recentes → fechar tudo).

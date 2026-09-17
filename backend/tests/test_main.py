@@ -103,14 +103,41 @@ def test_sem_build_a_api_continua_de_pe(banco, sem_frontend):
 # --- Frontend montado -------------------------------------------------------
 
 
-def test_raiz_serve_a_aplicacao(banco, com_frontend):
+def test_raiz_redireciona_para_o_totem(banco, com_frontend):
+    """MEL-003: a raiz deixou de **ser** o totem e passou a apontar para ele.
+
+    `follow_redirects=False` de propósito — com o padrão `True` o teste veria
+    apenas o 200 do destino e passaria mesmo sem redirect nenhum.
+    """
+    with TestClient(criar_app()) as cliente:
+        r = cliente.get("/", follow_redirects=False)
+
+    assert r.status_code == 307
+    assert r.headers["location"] == "/totem"
+
+
+def test_raiz_seguida_chega_no_totem(banco, com_frontend):
+    """O par do teste acima: o redirect não aponta para o vazio."""
     with TestClient(criar_app()) as cliente:
         r = cliente.get("/")
+
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
+    assert r.url.path == "/totem"
 
 
-@pytest.mark.parametrize("rota", ["/painel", "/painel/", "/rota-qualquer"])
+def test_redirect_da_raiz_e_temporario(banco, com_frontend):
+    """301 ficaria **gravado** no navegador e em cada tablet, e voltar atrás
+    exigiria limpar o cache de aparelho por aparelho. A MEL-003 ainda tem opções
+    abertas sobre o que a raiz vira; um permanente fecharia essa porta por um
+    salto de HTTP economizado."""
+    with TestClient(criar_app()) as cliente:
+        r = cliente.get("/", follow_redirects=False)
+
+    assert r.status_code == 307, "não pode ser 301/308 (permanente)"
+
+
+@pytest.mark.parametrize("rota", ["/totem", "/totem/", "/painel", "/painel/", "/rota-qualquer"])
 def test_rotas_da_aplicacao_recebem_o_index(banco, com_frontend, rota):
     """A aplicação é de página única: o roteamento acontece no cliente, então
     qualquer caminho desconhecido precisa entregar o index e deixar o React
@@ -141,6 +168,19 @@ def test_rota_de_api_inexistente_devolve_404_json(banco, com_frontend):
     assert r.status_code == 404
     assert "application/json" in r.headers["content-type"]
     assert "detail" in r.json()
+
+
+def test_totem_e_rota_explicita_no_frontend(banco, com_frontend):
+    """O backend serve o mesmo `index.html` para qualquer caminho fora de
+    `/api` — então, do lado dele, `/totem` não se distingue de
+    `/rota-qualquer`. Quem distingue é o `rotaAtual()` do frontend, e isso é
+    verificado em `frontend/scripts/verificar-rotas.mjs`.
+
+    Este teste existe para deixar o registro de **onde** a garantia vive, em vez
+    de a ausência dela aqui parecer esquecimento.
+    """
+    with TestClient(criar_app()) as cliente:
+        assert cliente.get("/totem").status_code == 200
 
 
 @pytest.mark.parametrize("rota", ["/api/qualquer", "/api/v1/tambem-nao", "/api"])

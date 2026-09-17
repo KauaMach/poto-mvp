@@ -2,10 +2,13 @@
   "name": "P.O.T.O — Totem de Segurança",
   "short_name": "P.O.T.O",
   "description": "Acionamento de emergência e segurança na UFPI.",
-  "start_url": "/",
+  "start_url": "/totem",
   "scope": "/",
   "display": "fullscreen",
-  "display_override": ["fullscreen", "standalone"],
+  "display_override": [
+    "fullscreen",
+    "standalone"
+  ],
   "orientation": "any",
   "theme_color": "#C0392B",
   "background_color": "#FBF9F6",

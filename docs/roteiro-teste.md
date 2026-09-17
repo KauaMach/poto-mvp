@@ -215,7 +215,8 @@ o Vite resolve caminhos que o backend serve de outro jeito.
 
 | URL | interface | quem usa |
 |---|---|---|
-| `/` | **Totem** — "Como podemos ajudar?" | o tablet no corredor |
+| `/totem` | **Totem** — "Como podemos ajudar?" | o tablet no corredor |
+| `/` | redireciona (307) para `/totem` | quem digitou só o endereço |
 | `/painel` | **Central** — lista de chamados | quem atende |
 | `/galeria` | catálogo de componentes | só em `make dev` |
 
@@ -223,9 +224,13 @@ Os endereços dependem do modo:
 
 | | totem | central |
 |---|---|---|
-| `make dev` | `http://localhost:5173/` | `http://localhost:5173/painel` |
-| `make serve` | `http://localhost:8000/` | `http://localhost:8000/painel` |
-| na Pi | `http://RaspPoto.local:8000/` | `http://RaspPoto.local:8000/painel` |
+| `make dev` | `http://localhost:5173/totem` | `http://localhost:5173/painel` |
+| `make serve` | `http://localhost:8000/totem` | `http://localhost:8000/painel` |
+| na Pi | `http://RaspPoto.local:8000/totem` | `http://RaspPoto.local:8000/painel` |
+
+A **raiz redireciona** para `/totem` (307), então digitar só o endereço continua
+funcionando — mas `/totem` é o caminho canônico, e é ele que vai no atalho do
+tablet.
 
 `/painel` e `/painel/` são a mesma rota. **Qualquer outro caminho cai no
 totem** — é aplicação de página única e o roteamento é no cliente.
@@ -372,7 +377,8 @@ curl -s -H "X-POTO-Token: seu-token" localhost:8000/api/v1/chamados
 
 ## 7. Roteiro da interface do totem
 
-Abra `/` e siga na ordem. A coluna "esperado" é o que confirma que funcionou.
+Abra `/totem` e siga na ordem. A coluna "esperado" é o que confirma que
+funcionou.
 
 | # | o que fazer | esperado |
 |---|---|---|
@@ -682,7 +688,7 @@ O script imprime o MAC e o gateway no fim justamente para isso.
 | Central: "Sem permissão para ver os chamados" | `POTO_PAINEL_TOKEN` preenchido | Deixe vazio — [§6.2](#62-o-token-da-central-precisa-ficar-vazio) |
 | Central carrega, nada chega em tempo real | WebSocket não conectou | Veja o indicador no topo e o console do navegador |
 | WebSocket recusado com 403 | caminho errado | É `/api/v1/ws`, sem `/painel` |
-| `/` ou `/painel` dão 404 | subiu com `make backend`, que não serve as telas | `make build` + `make serve`, ou `make dev` na `:5173` |
+| `/totem` ou `/painel` dão 404 | subiu com `make backend`, que não serve as telas | `make build` + `make serve`, ou `make dev` na `:5173` |
 | Telas carregam sem dados no `make dev` | o backend não está rodando | Suba `make backend` também, ou use `make dev` |
 | `/galeria` mostra o totem | você está em modo produção | Use `make dev` |
 | Rota de API devolve HTML | caminho fora de `/api` | Confira a URL — sob `/api` o 404 é JSON |
